@@ -966,7 +966,6 @@
     <div class="tb-actions">
       <button class="tb-btn" id="cache-btn" title="Cache Manager">🗄</button>
       <button class="tb-btn" id="settings-btn" title="Indicators & Settings">⚙</button>
-      <button class="tb-btn" id="fullscreen-btn" title="Fullscreen (F)">⛶</button>
     </div>
   </div>
 
@@ -1106,7 +1105,7 @@
     // === Reactive Config (dynamic, changes when user switches symbol/interval) ===
     let SYMBOL = "";
     let INTERVAL = "15m";
-    const LIMIT = 10000;
+    const LIMIT = 50000;
 
     // ATR Bot Settings
     const ATR_LENGTH = 10;
@@ -1343,11 +1342,8 @@
       if (price >= 10000) return { precision: 1, minMove: 0.1 };
       if (price >= 1000) return { precision: 2, minMove: 0.01 };
       if (price >= 100) return { precision: 3, minMove: 0.001 };
-      if (price >= 1) return { precision: 4, minMove: 0.0001 };
-      if (price >= 0.1) return { precision: 5, minMove: 0.00001 };
-      if (price >= 0.01) return { precision: 6, minMove: 0.000001 };
-      if (price >= 0.001) return { precision: 7, minMove: 0.0000001 };
-      return { precision: 8, minMove: 0.00000001 };
+      // Minimum precision is always 4 decimal places (0.0001)
+      return { precision: 4, minMove: 0.0001 };
     }
 
     function applyPriceFormat(bars) {
@@ -1404,25 +1400,7 @@
       });
     }
 
-    // =============================================
-    // FULLSCREEN
-    // =============================================
-    function setupFullscreen() {
-      const btn = document.getElementById("fullscreen-btn");
-      function toggle() {
-        const isFS = document.body.classList.toggle("fullscreen");
-        btn.title = isFS ? "Exit Fullscreen (F)" : "Fullscreen (F)";
-        btn.textContent = isFS ? "⛶" : "⛶";
-        btn.classList.toggle("active", isFS);
-        setTimeout(() => syncCanvasSize(), 100);
-      }
-      btn.addEventListener("click", toggle);
-      window.addEventListener("keydown", e => {
-        if (e.key === "f" || e.key === "F") {
-          if (e.target.tagName !== "INPUT") toggle();
-        }
-      });
-    }
+    // (fullscreen removed)
 
     // =============================================
     // SETTINGS PANEL
@@ -3411,7 +3389,7 @@
       setupSettingsPanel();
       setupIntervalPills();
       setupCacheManager();
-      setupFullscreen();
+
       setupSidebar();
 
       initResizeObserver();
