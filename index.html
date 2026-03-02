@@ -10,69 +10,877 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
   <style>
+    /* ===== DESIGN TOKENS ===== */
     :root {
-      --bg-dark: #0b0b0e;
-      --bg-panel: #111118;
-      --border-color: #1f2933;
+      --bg-dark: #080810;
+      --bg-panel: #0d0d16;
+      --bg-card: #12121e;
+      --border-color: #1e2435;
+      --border-bright: #2a3045;
       --text-main: #c3c6ce;
+      --text-dim: #5a6272;
       --accent-color: #00e676;
+      --accent-dim: rgba(0, 230, 118, 0.12);
       --danger-color: #ff5252;
+      --warn-color: #FFC107;
+      --topbar-h: 52px;
+      --sidebar-w: 48px;
+    }
+
+    * {
+      box-sizing: border-box;
     }
 
     body {
       margin: 0;
       padding: 0;
-      background-color: var(--bg-dark);
+      background: var(--bg-dark);
       color: var(--text-main);
-      font-family: 'Outfit', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-family: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       overflow: hidden;
       -webkit-font-smoothing: antialiased;
     }
 
+    /* ===== LOADING SCREEN ===== */
+    #loading-screen {
+      position: fixed;
+      inset: 0;
+      background: var(--bg-dark);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+      transition: opacity 0.4s ease, visibility 0.4s ease;
+    }
+
+    #loading-screen.hidden {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+    }
+
+    .loading-logo {
+      width: 56px;
+      height: 56px;
+      background: linear-gradient(135deg, #00e676, #00b0ff);
+      border-radius: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      font-weight: 700;
+      color: #000;
+      margin-bottom: 24px;
+      box-shadow: 0 0 40px rgba(0, 230, 118, 0.3);
+      animation: logo-pulse 2s ease-in-out infinite;
+    }
+
+    @keyframes logo-pulse {
+
+      0%,
+      100% {
+        box-shadow: 0 0 30px rgba(0, 230, 118, 0.3);
+      }
+
+      50% {
+        box-shadow: 0 0 60px rgba(0, 230, 118, 0.6);
+      }
+    }
+
+    .loading-title {
+      font-size: 20px;
+      font-weight: 700;
+      background: linear-gradient(90deg, #00e676, #00b0ff);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 32px;
+      letter-spacing: -0.5px;
+    }
+
+    .loading-bar-wrap {
+      width: 200px;
+      height: 3px;
+      background: rgba(255, 255, 255, 0.06);
+      border-radius: 2px;
+      overflow: hidden;
+      margin-bottom: 16px;
+    }
+
+    .loading-bar {
+      height: 100%;
+      background: linear-gradient(90deg, #00e676, #00b0ff);
+      border-radius: 2px;
+      animation: loading-slide 1.4s ease-in-out infinite;
+      width: 40%;
+    }
+
+    @keyframes loading-slide {
+      0% {
+        transform: translateX(-100%);
+      }
+
+      100% {
+        transform: translateX(350%);
+      }
+    }
+
+    .loading-text {
+      font-size: 12px;
+      color: var(--text-dim);
+      letter-spacing: 0.5px;
+    }
+
+    /* ===== TOPBAR ===== */
     #topbar {
-      height: 48px;
+      height: var(--topbar-h);
       display: flex;
       align-items: center;
-      padding: 0 24px;
-      background-color: var(--bg-panel);
+      padding: 0 14px;
+      gap: 10px;
+      background: linear-gradient(180deg, #0f0f1a 0%, #0b0b14 100%);
       border-bottom: 1px solid var(--border-color);
-      font-size: 13px;
-      font-weight: 400;
-      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+      box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03), 0 4px 24px rgba(0, 0, 0, 0.5);
+      position: relative;
+      z-index: 100;
+      user-select: none;
     }
 
-    #topbar label {
+    /* Brand */
+    .tb-brand {
       display: flex;
       align-items: center;
-      gap: 6px;
-      cursor: pointer;
-      padding: 4px 8px;
-      border-radius: 4px;
-      transition: background-color 0.2s, color 0.2s;
-      white-space: nowrap;
+      gap: 8px;
+      flex-shrink: 0;
+      padding-right: 10px;
+      border-right: 1px solid var(--border-color);
     }
 
-    #topbar label:hover {
-      background-color: rgba(255, 255, 255, 0.05);
+    .tb-brand-icon {
+      width: 28px;
+      height: 28px;
+      background: linear-gradient(135deg, #00e676, #00b0ff);
+      border-radius: 7px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      font-weight: 700;
+      color: #000;
+      letter-spacing: -1px;
+      flex-shrink: 0;
+    }
+
+    .tb-brand-name {
+      font-size: 14px;
+      font-weight: 600;
+      background: linear-gradient(90deg, #00e676, #00b0ff);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      letter-spacing: -0.3px;
+    }
+
+    /* Symbol block */
+    .tb-symbol-block {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+
+    #symbol-search-wrapper {
+      position: relative;
+    }
+
+    #symbol-input {
+      width: 156px;
+      height: 34px;
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      color: #fff;
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 600;
+      padding: 0 10px 0 32px;
+      outline: none;
+      letter-spacing: 0.6px;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    #symbol-input:focus {
+      border-color: var(--accent-color);
+      box-shadow: 0 0 0 2px rgba(0, 230, 118, 0.12);
+    }
+
+    #symbol-input::placeholder {
+      color: #3a4255;
+      font-weight: 400;
+      letter-spacing: 0;
+    }
+
+    .sym-search-icon {
+      position: absolute;
+      left: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: #3a4255;
+      font-size: 13px;
+      pointer-events: none;
+    }
+
+    /* Dropdown */
+    #symbol-dropdown {
+      position: absolute;
+      top: calc(100% + 8px);
+      left: 0;
+      width: 260px;
+      background: #0e0e1c;
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      box-shadow: 0 16px 48px rgba(0, 0, 0, 0.8);
+      z-index: 300;
+      max-height: 360px;
+      overflow-y: auto;
+      display: none;
+    }
+
+    #symbol-dropdown.open {
+      display: block;
+      animation: fadeSlideIn 0.12s ease;
+    }
+
+    #symbol-dropdown::-webkit-scrollbar {
+      width: 4px;
+    }
+
+    #symbol-dropdown::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    #symbol-dropdown::-webkit-scrollbar-thumb {
+      background: #1e2435;
+      border-radius: 2px;
+    }
+
+    .sym-group-label {
+      padding: 10px 14px 4px;
+      font-size: 10px;
+      letter-spacing: 1.2px;
+      text-transform: uppercase;
+      color: #3a4255;
+      font-weight: 700;
+    }
+
+    .sym-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 9px 14px;
+      cursor: pointer;
+      transition: background 0.12s;
+      font-size: 13px;
+      color: var(--text-main);
+    }
+
+    .sym-item:hover {
+      background: rgba(0, 230, 118, 0.07);
       color: #fff;
     }
 
-    #topbar input[type="checkbox"] {
-      accent-color: var(--accent-color);
+    .sym-item .sym-name {
+      font-weight: 600;
+      letter-spacing: 0.3px;
+    }
+
+    .sym-badge {
+      font-size: 9px;
+      padding: 2px 5px;
+      border-radius: 3px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      background: rgba(255, 193, 7, 0.15);
+      color: var(--warn-color);
+    }
+
+    /* Interval pills */
+    .tb-intervals {
+      display: flex;
+      gap: 2px;
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 3px;
+      flex-shrink: 0;
+    }
+
+    .iv-btn {
+      height: 26px;
+      padding: 0 9px;
+      border: none;
+      border-radius: 5px;
+      background: transparent;
+      color: var(--text-dim);
+      font-family: inherit;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+      white-space: nowrap;
+    }
+
+    .iv-btn:hover {
+      color: var(--text-main);
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    .iv-btn.active {
+      background: var(--accent-dim);
+      color: var(--accent-color);
+    }
+
+    /* Live price ticker */
+    #price-ticker {
+      display: flex;
+      align-items: baseline;
+      gap: 5px;
+      flex-shrink: 0;
+      padding: 0 12px;
+      border-left: 1px solid var(--border-color);
+      border-right: 1px solid var(--border-color);
+    }
+
+    #ticker-price {
+      font-size: 18px;
+      font-weight: 700;
+      color: #fff;
+      letter-spacing: -0.5px;
+      transition: color 0.3s;
+    }
+
+    #ticker-price.tick-up {
+      color: var(--accent-color);
+    }
+
+    #ticker-price.tick-down {
+      color: var(--danger-color);
+    }
+
+    #ticker-change {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+
+    #ticker-change.up {
+      background: rgba(0, 230, 118, 0.12);
+      color: var(--accent-color);
+    }
+
+    #ticker-change.down {
+      background: rgba(255, 82, 82, 0.12);
+      color: var(--danger-color);
+    }
+
+    /* Status */
+    #status {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--text-dim);
+    }
+
+    .status-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--accent-color);
+      animation: pulse-dot 2s infinite;
+    }
+
+    @keyframes pulse-dot {
+
+      0%,
+      100% {
+        opacity: 1;
+        transform: scale(1);
+      }
+
+      50% {
+        opacity: 0.4;
+        transform: scale(0.7);
+      }
+    }
+
+    .status-loading-spin {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      border: 2px solid rgba(255, 193, 7, 0.2);
+      border-top-color: var(--warn-color);
+      animation: spin 0.7s linear infinite;
+      flex-shrink: 0;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    #status .sym-tag {
+      font-weight: 600;
+      color: var(--text-main);
+    }
+
+    #status .intv-tag {
+      color: var(--text-dim);
+    }
+
+    #status .bars-tag {
+      color: #3a4255;
+    }
+
+    /* Icon buttons row */
+    .tb-actions {
+      display: flex;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+
+    .tb-btn {
+      width: 34px;
+      height: 34px;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      background: var(--bg-card);
+      color: var(--text-dim);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 15px;
+      transition: all 0.15s;
+      flex-shrink: 0;
+    }
+
+    .tb-btn:hover {
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text-main);
+      border-color: var(--border-bright);
+    }
+
+    .tb-btn.active {
+      background: var(--accent-dim);
+      color: var(--accent-color);
+      border-color: rgba(0, 230, 118, 0.3);
+    }
+
+    .tb-btn.danger-active {
+      background: rgba(255, 82, 82, 0.1);
+      color: var(--danger-color);
+      border-color: rgba(255, 82, 82, 0.3);
+    }
+
+    /* ===== LEFT SIDEBAR (Drawing Tools) ===== */
+    #draw-sidebar {
+      position: relative;
+      width: var(--sidebar-w);
+      height: calc(100vh - var(--topbar-h));
+      background: linear-gradient(180deg, #0d0d18 0%, #090912 100%);
+      border-right: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 8px 0;
+      gap: 4px;
+      z-index: 50;
+      flex-shrink: 0;
+      overflow: visible;
+    }
+
+    body.fullscreen #draw-sidebar {
+      height: 100vh;
+    }
+
+    .sidebar-divider {
+      width: 28px;
+      height: 1px;
+      background: var(--border-color);
+      margin: 4px 0;
+    }
+
+    .sidebar-btn {
+      width: 36px;
+      height: 36px;
+      border-radius: 9px;
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--text-dim);
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 2px;
+      font-size: 17px;
+      transition: all 0.15s;
+      position: relative;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .sidebar-btn:hover {
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--text-main);
+      border-color: var(--border-bright);
+    }
+
+    .sidebar-btn.active {
+      background: var(--accent-dim);
+      color: var(--accent-color);
+      border-color: rgba(0, 230, 118, 0.35);
+    }
+
+    .sidebar-btn.active-danger {
+      background: rgba(255, 82, 82, 0.1);
+      color: var(--danger-color);
+      border-color: rgba(255, 82, 82, 0.3);
+    }
+
+    /* Tooltip */
+    .sidebar-btn::after {
+      content: attr(data-tip);
+      position: absolute;
+      left: calc(100% + 10px);
+      top: 50%;
+      transform: translateY(-50%);
+      background: #1a1f30;
+      color: #fff;
+      font-size: 11px;
+      font-weight: 500;
+      padding: 4px 8px;
+      border-radius: 5px;
+      white-space: nowrap;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.15s;
+      border: 1px solid var(--border-color);
+      font-family: 'Outfit', sans-serif;
+      z-index: 500;
+    }
+
+    .sidebar-btn:hover::after {
+      opacity: 1;
+    }
+
+    /* Touch hint for draw modes */
+    .draw-hint {
+      position: fixed;
+      bottom: 20px;
+      left: calc(var(--sidebar-w) + 12px);
+      background: rgba(0, 0, 0, 0.85);
+      color: var(--text-main);
+      font-size: 12px;
+      padding: 8px 14px;
+      border-radius: 8px;
+      border: 1px solid var(--border-color);
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.3s;
+      z-index: 200;
+      backdrop-filter: blur(8px);
+    }
+
+    .draw-hint.visible {
+      opacity: 1;
+    }
+
+    /* ===== FLOATING PANEL BASE ===== */
+    .float-panel {
+      position: fixed;
+      background: #0e0e1c;
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+      z-index: 250;
+      display: none;
+    }
+
+    .float-panel.open {
+      display: block;
+      animation: fadeSlideIn 0.15s ease;
+    }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 16px 10px;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .panel-title {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 1.2px;
+      text-transform: uppercase;
+      color: var(--text-dim);
+    }
+
+    .panel-close {
+      width: 22px;
+      height: 22px;
+      border-radius: 4px;
+      border: none;
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text-dim);
+      cursor: pointer;
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s;
+    }
+
+    .panel-close:hover {
+      background: rgba(255, 82, 82, 0.15);
+      color: var(--danger-color);
+    }
+
+    /* ===== SETTINGS PANEL ===== */
+    #settings-panel {
+      top: calc(var(--topbar-h) + 8px);
+      right: 14px;
+      width: 268px;
+      padding: 0 0 8px;
+    }
+
+    .settings-section {
+      padding: 10px 16px 4px;
+    }
+
+    .settings-section-title {
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      color: #3a4255;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+
+    .settings-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 7px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+    }
+
+    .settings-row:last-child {
+      border-bottom: none;
+    }
+
+    .settings-label {
+      font-size: 13px;
+      color: var(--text-main);
       cursor: pointer;
     }
 
-    #status {
-      color: var(--accent-color);
-      margin-left: auto;
-      font-weight: 500;
-      letter-spacing: 0.3px;
+    .settings-label:hover {
+      color: #fff;
+    }
+
+    /* Toggle switch */
+    .toggle-switch {
+      position: relative;
+      width: 36px;
+      height: 20px;
+      flex-shrink: 0;
+    }
+
+    .toggle-switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .toggle-slider {
+      position: absolute;
+      inset: 0;
+      background: #1a1f2e;
+      border-radius: 20px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .toggle-slider::before {
+      content: '';
+      position: absolute;
+      width: 14px;
+      height: 14px;
+      left: 3px;
+      bottom: 3px;
+      background: #3a4255;
+      border-radius: 50%;
+      transition: transform 0.2s, background 0.2s;
+    }
+
+    .toggle-switch input:checked+.toggle-slider {
+      background: rgba(0, 230, 118, 0.2);
+    }
+
+    .toggle-switch input:checked+.toggle-slider::before {
+      transform: translateX(16px);
+      background: var(--accent-color);
+    }
+
+    /* ===== CACHE MANAGER PANEL ===== */
+    #cache-panel {
+      top: calc(var(--topbar-h) + 8px);
+      right: 58px;
+      width: 320px;
+    }
+
+    #cache-list {
+      max-height: 320px;
+      overflow-y: auto;
+      padding: 4px 0;
+    }
+
+    #cache-list::-webkit-scrollbar {
+      width: 4px;
+    }
+
+    #cache-list::-webkit-scrollbar-thumb {
+      background: #1e2435;
+      border-radius: 2px;
+    }
+
+    .cache-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 16px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+      transition: background 0.12s;
+    }
+
+    .cache-item:last-child {
+      border-bottom: none;
+    }
+
+    .cache-item:hover {
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .cache-sym {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-main);
+      flex: 1;
+    }
+
+    .cache-meta {
+      font-size: 11px;
+      color: var(--text-dim);
+    }
+
+    .cache-size {
+      font-size: 11px;
+      color: #3a4255;
+      margin-right: 4px;
+    }
+
+    .cache-del-btn {
+      width: 22px;
+      height: 22px;
+      border-radius: 5px;
+      border: 1px solid rgba(255, 82, 82, 0.25);
+      background: rgba(255, 82, 82, 0.07);
+      color: var(--danger-color);
+      cursor: pointer;
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s;
+      flex-shrink: 0;
+    }
+
+    .cache-del-btn:hover {
+      background: rgba(255, 82, 82, 0.2);
+    }
+
+    .cache-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 16px;
+      border-top: 1px solid var(--border-color);
+    }
+
+    .cache-total {
+      font-size: 11px;
+      color: var(--text-dim);
+    }
+
+    .clear-all-btn {
+      height: 28px;
+      padding: 0 12px;
+      border: 1px solid rgba(255, 82, 82, 0.3);
+      border-radius: 6px;
+      background: rgba(255, 82, 82, 0.08);
+      color: var(--danger-color);
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 11px;
+      font-weight: 600;
+      transition: all 0.15s;
+    }
+
+    .clear-all-btn:hover {
+      background: rgba(255, 82, 82, 0.18);
+    }
+
+    .cache-empty {
+      padding: 24px 16px;
+      text-align: center;
+      color: #3a4255;
+      font-size: 13px;
+    }
+
+    /* ===== CHART AREA ===== */
+    #main-area {
+      display: flex;
+      width: 100vw;
+      height: calc(100vh - var(--topbar-h));
+      transition: height 0.2s;
+    }
+
+    body.fullscreen #topbar {
+      display: none;
+    }
+
+    body.fullscreen #main-area {
+      height: 100vh;
+    }
+
+    body.fullscreen #settings-panel,
+    body.fullscreen #cache-panel {
+      top: 8px;
     }
 
     #chart-wrapper {
       position: relative;
-      width: 100vw;
-      height: calc(100vh - 48px);
+      flex: 1;
+      height: 100%;
+      min-width: 0;
     }
 
     #chart-container {
@@ -87,33 +895,203 @@
       pointer-events: none;
       z-index: 5;
     }
+
+    @keyframes fadeSlideIn {
+      from {
+        opacity: 0;
+        transform: translateY(-6px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
   </style>
 </head>
 
 <body>
+  <!-- TOPBAR -->
   <div id="topbar">
-    <div style="flex-grow: 1; margin-left: 20px; display: flex; gap: 10px">
-      <label><input type="checkbox" id="toggle-atr1" /> ATR Bot 1</label>
-      <label><input type="checkbox" id="toggle-atr2" /> ATR Bot 2</label>
-      <label><input type="checkbox" id="toggle-vsr" /> VSR</label>
-      <label><input type="checkbox" id="toggle-vpvol" /> VP Bar</label>
-      <label><input type="checkbox" id="toggle-vwap" /> VWAP</label>
-      <span style="border-left: 1px solid #1f2933; margin: 0 5px"></span>
-      <label><input type="checkbox" id="toggle-draw-vp" /> Draw VP</label>
-      <label><input type="checkbox" id="toggle-draw-rect" /> Draw Rect</label>
+    <!-- Brand -->
+    <div class="tb-brand">
+      <div class="tb-brand-icon">M</div>
+      <span class="tb-brand-name">MINTCHART</span>
     </div>
-    <span id="status">Starting...</span>
+
+    <!-- Symbol Search -->
+    <div class="tb-symbol-block">
+      <div id="symbol-search-wrapper">
+        <span class="sym-search-icon">⌕</span>
+        <input id="symbol-input" type="text" placeholder="Symbol..." autocomplete="off" spellcheck="false" />
+        <div id="symbol-dropdown"></div>
+      </div>
+    </div>
+
+    <!-- Interval pill buttons -->
+    <div class="tb-intervals" id="interval-pills">
+      <button class="iv-btn" data-iv="1m">1m</button>
+      <button class="iv-btn" data-iv="5m">5m</button>
+      <button class="iv-btn active" data-iv="15m">15m</button>
+      <button class="iv-btn" data-iv="1h">1h</button>
+      <button class="iv-btn" data-iv="4h">4h</button>
+      <button class="iv-btn" data-iv="1d">1D</button>
+    </div>
+
+    <!-- Live Price Ticker -->
+    <div id="price-ticker">
+      <span id="ticker-price">—</span>
+      <span id="ticker-change" class="up">—</span>
+    </div>
+
+    <!-- Status -->
+    <div id="status"><span style="color:#3a4255">Starting...</span></div>
+
+    <!-- Action buttons -->
+    <div class="tb-actions">
+      <button class="tb-btn" id="cache-btn" title="Cache Manager">🗄</button>
+      <button class="tb-btn" id="settings-btn" title="Indicators & Settings">⚙</button>
+      <button class="tb-btn" id="fullscreen-btn" title="Fullscreen (F)">⛶</button>
+    </div>
   </div>
 
-  <div id="chart-wrapper">
-    <div id="chart-container"></div>
-    <canvas id="overlay-canvas"></canvas>
+  <!-- SETTINGS PANEL -->
+  <div id="settings-panel" class="float-panel">
+    <div class="panel-header">
+      <span class="panel-title">Indicators &amp; Tools</span>
+      <button class="panel-close" id="settings-close">✕</button>
+    </div>
+    <div class="settings-section">
+      <div class="settings-section-title">Indicators</div>
+      <div class="settings-row">
+        <span class="settings-label">ATR Bot 1 (Cloud)</span>
+        <label class="toggle-switch"><input type="checkbox" id="toggle-atr1" /><span
+            class="toggle-slider"></span></label>
+      </div>
+      <div class="settings-row">
+        <span class="settings-label">ATR Bot 2 (Lines)</span>
+        <label class="toggle-switch"><input type="checkbox" id="toggle-atr2" /><span
+            class="toggle-slider"></span></label>
+      </div>
+      <div class="settings-row">
+        <span class="settings-label">VSR Zones</span>
+        <label class="toggle-switch"><input type="checkbox" id="toggle-vsr" /><span
+            class="toggle-slider"></span></label>
+      </div>
+      <div class="settings-row">
+        <span class="settings-label">Volume Profile</span>
+        <label class="toggle-switch"><input type="checkbox" id="toggle-vpvol" /><span
+            class="toggle-slider"></span></label>
+      </div>
+      <div class="settings-row">
+        <span class="settings-label">VWAP</span>
+        <label class="toggle-switch"><input type="checkbox" id="toggle-vwap" /><span
+            class="toggle-slider"></span></label>
+      </div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-section-title">Drawing Tools</div>
+      <div class="settings-row">
+        <span class="settings-label">Draw Volume Profile</span>
+        <label class="toggle-switch"><input type="checkbox" id="toggle-draw-vp" /><span
+            class="toggle-slider"></span></label>
+      </div>
+      <div class="settings-row">
+        <span class="settings-label">Draw Rectangle</span>
+        <label class="toggle-switch"><input type="checkbox" id="toggle-draw-rect" /><span
+            class="toggle-slider"></span></label>
+      </div>
+    </div>
   </div>
+
+  <!-- CACHE MANAGER PANEL -->
+  <div id="cache-panel" class="float-panel">
+    <div class="panel-header">
+      <span class="panel-title">Cache Manager</span>
+      <button class="panel-close" id="cache-close">✕</button>
+    </div>
+    <div id="cache-list"></div>
+    <div class="cache-footer">
+      <span class="cache-total" id="cache-total-size"></span>
+      <button class="clear-all-btn" id="clear-all-cache">Clear All</button>
+    </div>
+  </div>
+
+  <!-- LOADING SCREEN -->
+  <div id="loading-screen">
+    <div class="loading-logo">M</div>
+    <div class="loading-title">MINTCHART</div>
+    <div class="loading-bar-wrap">
+      <div class="loading-bar"></div>
+    </div>
+    <div class="loading-text" id="loading-text">Initializing...</div>
+  </div>
+
+  <!-- CHART -->
+  <div id="main-area">
+    <!-- LEFT SIDEBAR -->
+    <div id="draw-sidebar">
+      <!-- Cursor (default) -->
+      <button class="sidebar-btn active" id="sb-cursor" data-tip="Cursor (Esc)">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <path d="M5 3l14 9-7 1-4 6z" />
+        </svg>
+      </button>
+      <div class="sidebar-divider"></div>
+      <!-- Draw Rectangle -->
+      <button class="sidebar-btn" id="sb-rect" data-tip="Draw Rectangle">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="3" width="18" height="18" rx="2" />
+        </svg>
+      </button>
+      <!-- Draw Volume Profile -->
+      <button class="sidebar-btn" id="sb-vp" data-tip="Draw Volume Profile">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="4" width="6" height="16" rx="1" />
+          <rect x="11" y="8" width="10" height="8" rx="1" />
+          <line x1="3" y1="12" x2="21" y2="12" />
+        </svg>
+      </button>
+      <div class="sidebar-divider"></div>
+      <!-- Measure tool -->
+      <button class="sidebar-btn" id="sb-measure" data-tip="Measure (M)">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <line x1="2" y1="12" x2="22" y2="12" />
+          <line x1="2" y1="8" x2="2" y2="16" />
+          <line x1="22" y1="8" x2="22" y2="16" />
+          <line x1="12" y1="9" x2="12" y2="15" />
+        </svg>
+      </button>
+      <!-- Delete selection -->
+      <button class="sidebar-btn" id="sb-delete" data-tip="Delete Selected">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="3 6 5 6 21 6" />
+          <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+          <path d="M10 11v6M14 11v6" />
+          <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+        </svg>
+      </button>
+    </div>
+    <!-- Chart area -->
+    <div id="chart-wrapper">
+      <div id="chart-container"></div>
+      <canvas id="overlay-canvas"></canvas>
+    </div>
+  </div>
+
+  <!-- Draw hint for touch -->
+  <div class="draw-hint" id="draw-hint"></div>
 
   <script>
-    const SYMBOL = "IMXUSDT";
-    const INTERVAL = "15m"; // using 15m to easily grab 10k within a reasonable timeframe (approx 104 days)
-    const LIMIT = 50000;
+    // === Reactive Config (dynamic, changes when user switches symbol/interval) ===
+    let SYMBOL = "";
+    let INTERVAL = "15m";
+    const LIMIT = 10000;
 
     // ATR Bot Settings
     const ATR_LENGTH = 10;
@@ -138,7 +1116,7 @@
     let globalBars = [];
     let measureState = {
       modeActive: false,
-      step: 0, // 0: inactive/waiting for point 1, 1: waiting for point 2, 2: completed
+      step: 0,
       startIdx: null,
       endIdx: null,
     };
@@ -166,37 +1144,426 @@
       if (savedVps) drawnVpRects = JSON.parse(savedVps);
     } catch (e) { }
 
-    let vpCreateState = {
-      active: false,
-      logical1: null,
-      logical2: null, // We only care about logical (time) boundaries for VP calculation
-    };
-
+    let vpCreateState = { active: false, logical1: null, logical2: null };
     let rectDragState = {
-      active: false,
-      mode: "", // 'move', 'nw', 'ne', 'sw', 'se'
-      isVp: false, // Flag to indicate if dragging a VP or simple Rect
-      index: -1,
-      startLogical: null,
-      startPrice: null,
-      originalLogical1: null,
-      originalLogical2: null,
-      originalPrice1: null, // Not strongly used for VP drag, but kept for uniform logic
-      originalPrice2: null,
+      active: false, mode: "", isVp: false, index: -1,
+      startLogical: null, startPrice: null,
+      originalLogical1: null, originalLogical2: null,
+      originalPrice1: null, originalPrice2: null,
     };
-    let rectCreateState = {
-      active: false,
-      logical1: null,
-      price1: null,
-      logical2: null,
-      price2: null,
-    };
+    let rectCreateState = { active: false, logical1: null, price1: null, logical2: null, price2: null };
     let hoveredRectIndex = -1;
     let hoveredVpIndex = -1;
     let hoveredCorner = "";
     let selectedRectIndex = -1;
     let selectedVpIndex = -1;
     let vwapSeries;
+
+    // =============================================
+    // SYMBOL SEARCH & EXCHANGE INFO
+    // =============================================
+    let allSymbols = []; // full list from Binance Futures exchange info
+
+    function getCachedSymbolsList() {
+      // Scan localStorage for keys matching our data cache pattern
+      const cached = new Set();
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.endsWith("_DB_v6")) {
+          // Key format: "BTCUSDT_15m_DB_v6"
+          const parts = key.split("_");
+          if (parts.length >= 3) cached.add(parts[0]);
+        }
+      }
+      return cached;
+    }
+
+    async function fetchExchangeInfo() {
+      const cacheKey = "binance_futures_exchange_info_v1";
+      const cacheTs = "binance_futures_exchange_info_ts";
+      const TTL = 24 * 60 * 60 * 1000; // 24 hours
+
+      // Return from localStorage if fresh
+      try {
+        const ts = parseInt(localStorage.getItem(cacheTs) || "0");
+        if (Date.now() - ts < TTL) {
+          const cached = localStorage.getItem(cacheKey);
+          if (cached) return JSON.parse(cached);
+        }
+      } catch (e) { }
+
+      try {
+        const res = await fetch("https://fapi.binance.com/fapi/v1/exchangeInfo");
+        const data = await res.json();
+        const symbols = data.symbols
+          .filter(s => s.status === "TRADING" && s.contractType === "PERPETUAL")
+          .map(s => s.symbol)
+          .sort();
+        localStorage.setItem(cacheKey, JSON.stringify(symbols));
+        localStorage.setItem(cacheTs, Date.now().toString());
+        return symbols;
+      } catch (e) {
+        console.error("Failed to fetch exchange info", e);
+        return [];
+      }
+    }
+
+    function getStartSymbol() {
+      // Priority 1: last used symbol saved in localStorage
+      const last = localStorage.getItem("stat1_lastSymbol");
+      if (last) return last;
+      // Priority 2: first symbol that has OHLCV data cached
+      const cachedSet = getCachedSymbolsList();
+      if (cachedSet.size > 0) return Array.from(cachedSet)[0];
+      // Fallback
+      return "BTCUSDT";
+    }
+
+    function setupSymbolSearch() {
+      const input = document.getElementById("symbol-input");
+      const dropdown = document.getElementById("symbol-dropdown");
+      const cachedSet = getCachedSymbolsList();
+
+      function renderDropdown(query) {
+        const q = query.trim().toUpperCase();
+        let filtered = q
+          ? allSymbols.filter(s => s.includes(q))
+          : [...allSymbols];
+
+        // Put cached symbols first
+        filtered.sort((a, b) => {
+          const aC = cachedSet.has(a) ? 0 : 1;
+          const bC = cachedSet.has(b) ? 0 : 1;
+          return aC - bC || a.localeCompare(b);
+        });
+
+        const top = filtered.slice(0, 60);
+        if (top.length === 0) {
+          dropdown.innerHTML = `<div style="padding:12px 14px;color:#555;font-size:12px;">No results</div>`;
+          dropdown.classList.add("open");
+          return;
+        }
+
+        let html = "";
+        let hasCachedSection = false;
+        let hasOthersSection = false;
+
+        for (const sym of top) {
+          const isCached = cachedSet.has(sym);
+          if (isCached && !hasCachedSection) {
+            html += `<div class="sym-group-label">⚡ Cached</div>`;
+            hasCachedSection = true;
+          }
+          if (!isCached && !hasOthersSection) {
+            html += `<div class="sym-group-label">All Symbols</div>`;
+            hasOthersSection = true;
+          }
+          const badge = isCached
+            ? `<span class="sym-badge cached">CACHED</span>`
+            : ``;
+          html += `<div class="sym-item" data-sym="${sym}">
+            <span class="sym-name">${sym}</span>${badge}
+          </div>`;
+        }
+
+        dropdown.innerHTML = html;
+        dropdown.classList.add("open");
+
+        dropdown.querySelectorAll(".sym-item").forEach(el => {
+          el.addEventListener("mousedown", (e) => {
+            e.preventDefault();
+            const sym = el.dataset.sym;
+            selectSymbol(sym);
+          });
+        });
+      }
+
+      input.addEventListener("focus", () => {
+        renderDropdown(input.value);
+      });
+
+      input.addEventListener("input", () => {
+        renderDropdown(input.value);
+      });
+
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") {
+          dropdown.classList.remove("open");
+          input.blur();
+        }
+        if (e.key === "Enter") {
+          const q = input.value.trim().toUpperCase();
+          if (allSymbols.includes(q)) selectSymbol(q);
+        }
+      });
+
+      document.addEventListener("click", (e) => {
+        if (!e.target.closest("#symbol-search-wrapper")) {
+          dropdown.classList.remove("open");
+        }
+      });
+    }
+
+    async function selectSymbol(sym) {
+      if (!sym || sym === SYMBOL) {
+        document.getElementById("symbol-dropdown").classList.remove("open");
+        return;
+      }
+      SYMBOL = sym;
+      document.getElementById("symbol-input").value = sym;
+      document.getElementById("symbol-dropdown").classList.remove("open");
+      localStorage.setItem("stat1_lastSymbol", sym);
+
+      setStatus("loading", `Loading ${sym}...`);
+      if (window._tickerWS) { window._tickerWS.close(); window._tickerWS = null; }
+      await loadSymbol();
+      setupTickerWS(sym);
+    }
+
+    // =============================================
+    // PRICE FORMAT — auto-detect precision per symbol
+    // =============================================
+    function getPriceFormat(price) {
+      if (!price || price <= 0) return { precision: 4, minMove: 0.0001 };
+      if (price >= 10000) return { precision: 1, minMove: 0.1 };
+      if (price >= 1000) return { precision: 2, minMove: 0.01 };
+      if (price >= 100) return { precision: 3, minMove: 0.001 };
+      if (price >= 1) return { precision: 4, minMove: 0.0001 };
+      if (price >= 0.1) return { precision: 5, minMove: 0.00001 };
+      if (price >= 0.01) return { precision: 6, minMove: 0.000001 };
+      if (price >= 0.001) return { precision: 7, minMove: 0.0000001 };
+      return { precision: 8, minMove: 0.00000001 };
+    }
+
+    function applyPriceFormat(bars) {
+      if (!bars || bars.length === 0) return;
+      const lastPrice = bars[bars.length - 1].close;
+      const { precision, minMove } = getPriceFormat(lastPrice);
+      const fmt = { type: "price", precision, minMove };
+      [candleSeries, t1Series, t2Series, t1Series2, t2Series2, vwapSeries].forEach(s => {
+        if (s) s.applyOptions({ priceFormat: fmt });
+      });
+    }
+
+    // =============================================
+    // STATUS HELPER
+    // =============================================
+    function setStatus(type, text) {
+      const el = document.getElementById("status");
+      if (type === "loading") {
+        el.innerHTML = `<div class="status-loading-spin"></div><span>${text}</span>`;
+      } else if (type === "ready") {
+        el.innerHTML = `<div class="status-dot"></div><span class="sym-tag">${SYMBOL}</span><span class="intv-tag">${INTERVAL}</span><span class="bars-tag">${text}</span>`;
+      } else if (type === "error") {
+        el.innerHTML = `<span style="color:var(--danger-color)">${text}</span>`;
+      } else {
+        el.innerHTML = `<span style="color:#3a4255">${text}</span>`;
+      }
+    }
+
+    // =============================================
+    // INTERVAL PILLS
+    // =============================================
+    function setupIntervalPills() {
+      const savedInterval = localStorage.getItem("stat1_interval");
+      if (savedInterval) INTERVAL = savedInterval;
+
+      const pills = document.querySelectorAll(".iv-btn");
+      // Mark active
+      pills.forEach(btn => {
+        btn.classList.toggle("active", btn.dataset.iv === INTERVAL);
+      });
+
+      pills.forEach(btn => {
+        btn.addEventListener("click", async () => {
+          const iv = btn.dataset.iv;
+          if (iv === INTERVAL) return;
+          INTERVAL = iv;
+          localStorage.setItem("stat1_interval", iv);
+          pills.forEach(b => b.classList.toggle("active", b.dataset.iv === iv));
+          if (SYMBOL) {
+            setStatus("loading", `Loading ${SYMBOL} ${iv}...`);
+            await loadSymbol();
+          }
+        });
+      });
+    }
+
+    // =============================================
+    // FULLSCREEN
+    // =============================================
+    function setupFullscreen() {
+      const btn = document.getElementById("fullscreen-btn");
+      function toggle() {
+        const isFS = document.body.classList.toggle("fullscreen");
+        btn.title = isFS ? "Exit Fullscreen (F)" : "Fullscreen (F)";
+        btn.textContent = isFS ? "⛶" : "⛶";
+        btn.classList.toggle("active", isFS);
+        setTimeout(() => syncCanvasSize(), 100);
+      }
+      btn.addEventListener("click", toggle);
+      window.addEventListener("keydown", e => {
+        if (e.key === "f" || e.key === "F") {
+          if (e.target.tagName !== "INPUT") toggle();
+        }
+      });
+    }
+
+    // =============================================
+    // SETTINGS PANEL
+    // =============================================
+    function setupSettingsPanel() {
+      const btn = document.getElementById("settings-btn");
+      const panel = document.getElementById("settings-panel");
+      const closeBtn = document.getElementById("settings-close");
+
+      function togglePanel(force) {
+        const isOpen = force !== undefined ? force : !panel.classList.contains("open");
+        panel.classList.toggle("open", isOpen);
+        btn.classList.toggle("active", isOpen);
+        // Close cache when opening settings
+        if (isOpen) {
+          document.getElementById("cache-panel").classList.remove("open");
+          document.getElementById("cache-btn").classList.remove("active");
+        }
+      }
+
+      btn.addEventListener("click", (e) => { e.stopPropagation(); togglePanel(); });
+      closeBtn.addEventListener("click", () => togglePanel(false));
+      document.addEventListener("click", (e) => {
+        if (!e.target.closest("#settings-panel") && !e.target.closest("#settings-btn"))
+          togglePanel(false);
+      });
+    }
+
+    // =============================================
+    // CACHE MANAGER
+    // =============================================
+    function setupCacheManager() {
+      const btn = document.getElementById("cache-btn");
+      const panel = document.getElementById("cache-panel");
+      const closeBtn = document.getElementById("cache-close");
+      const clearAllBtn = document.getElementById("clear-all-cache");
+
+      function getOHLCVKeys() {
+        const keys = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && key.endsWith("_DB_v6")) keys.push(key);
+        }
+        return keys.sort();
+      }
+
+      function formatBytes(bytes) {
+        if (bytes < 1024) return bytes + " B";
+        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+        return (bytes / 1024 / 1024).toFixed(2) + " MB";
+      }
+
+      function renderCacheList() {
+        const listEl = document.getElementById("cache-list");
+        const totalEl = document.getElementById("cache-total-size");
+        const keys = getOHLCVKeys();
+
+        if (keys.length === 0) {
+          listEl.innerHTML = `<div class="cache-empty">No cached data found</div>`;
+          totalEl.textContent = "0 entries";
+          return;
+        }
+
+        let totalBytes = 0;
+        let html = "";
+        for (const key of keys) {
+          const val = localStorage.getItem(key) || "";
+          const bytes = new Blob([val]).size;
+          totalBytes += bytes;
+          // Parse symbol + interval from key: "BTCUSDT_15m_DB_v6"
+          const parts = key.replace("_DB_v6", "").split("_");
+          const sym = parts[0];
+          const iv = parts.slice(1).join("_");
+          let bars = 0;
+          try { bars = JSON.parse(val).length; } catch (e) { }
+          html += `
+            <div class="cache-item">
+              <span class="cache-sym">${sym}</span>
+              <span class="cache-meta">${iv} &middot; ${bars.toLocaleString()} bars</span>
+              <span class="cache-size">${formatBytes(bytes)}</span>
+              <button class="cache-del-btn" data-key="${key}" title="Delete">✕</button>
+            </div>`;
+        }
+        listEl.innerHTML = html;
+        totalEl.textContent = `${keys.length} entries · ${formatBytes(totalBytes)}`;
+
+        listEl.querySelectorAll(".cache-del-btn").forEach(b => {
+          b.addEventListener("click", () => {
+            localStorage.removeItem(b.dataset.key);
+            renderCacheList();
+          });
+        });
+      }
+
+      function togglePanel(force) {
+        const isOpen = force !== undefined ? force : !panel.classList.contains("open");
+        if (isOpen) renderCacheList();
+        panel.classList.toggle("open", isOpen);
+        btn.classList.toggle("active", isOpen);
+        if (isOpen) {
+          document.getElementById("settings-panel").classList.remove("open");
+          document.getElementById("settings-btn").classList.remove("active");
+        }
+      }
+
+      btn.addEventListener("click", (e) => { e.stopPropagation(); togglePanel(); });
+      closeBtn.addEventListener("click", () => togglePanel(false));
+      clearAllBtn.addEventListener("click", () => {
+        const keys = getOHLCVKeys();
+        if (keys.length === 0) return;
+        if (confirm(`Delete all ${keys.length} cached datasets?`)) {
+          keys.forEach(k => localStorage.removeItem(k));
+          renderCacheList();
+        }
+      });
+      document.addEventListener("click", (e) => {
+        if (!e.target.closest("#cache-panel") && !e.target.closest("#cache-btn"))
+          togglePanel(false);
+      });
+    }
+
+    // =============================================
+    // LIVE TICKER via WebSocket
+    // =============================================
+    let _prevTickerPrice = 0;
+    function setupTickerWS(sym) {
+      if (!sym) return;
+      if (window._tickerWS) { window._tickerWS.close(); }
+      const wsUrl = `wss://fstream.binance.com/ws/${sym.toLowerCase()}@ticker`;
+      const ws = new WebSocket(wsUrl);
+      window._tickerWS = ws;
+
+      ws.onmessage = (ev) => {
+        try {
+          const d = JSON.parse(ev.data);
+          const price = parseFloat(d.c);
+          const change = parseFloat(d.P); // % change
+          const { precision } = getPriceFormat(price);
+
+          const priceEl = document.getElementById("ticker-price");
+          const changeEl = document.getElementById("ticker-change");
+
+          // Flash color
+          if (_prevTickerPrice && price !== _prevTickerPrice) {
+            priceEl.className = price > _prevTickerPrice ? "tick-up" : "tick-down";
+            setTimeout(() => { priceEl.className = ""; }, 400);
+          }
+          _prevTickerPrice = price;
+
+          priceEl.textContent = price.toFixed(precision);
+          changeEl.textContent = (change >= 0 ? "+" : "") + change.toFixed(2) + "%";
+          changeEl.className = change >= 0 ? "up" : "down";
+        } catch (e) { }
+      };
+      ws.onerror = () => { };
+    }
 
     async function fetchBinanceData() {
       const cacheKey = `${SYMBOL}_${INTERVAL}_DB_v6`;
@@ -234,7 +1601,7 @@
           ? existingBars[existingBars.length - 1].time * 1000
           : 0;
       if (lastTime > 0) {
-        statusText.innerText = `Checking for new data...`;
+        statusText.innerHTML = `<span class="status-loading">Checking for new data... (${SYMBOL})</span>`;
         try {
           let startTime = lastTime + 1;
           let url = `https://fapi.binance.com/fapi/v1/klines?symbol=${SYMBOL}&interval=${INTERVAL}&limit=${batchSize}&startTime=${startTime}`;
@@ -267,7 +1634,7 @@
         let endTime = firstTime - 1;
 
         while (unique.size < LIMIT) {
-          statusText.innerText = `Fetching history... (${unique.size}/${LIMIT})`;
+          statusText.innerHTML = `<span class="status-loading">Loading ${SYMBOL} history... (${unique.size.toLocaleString()} / ${LIMIT.toLocaleString()})</span>`;
           let url = `https://fapi.binance.com/fapi/v1/klines?symbol=${SYMBOL}&interval=${INTERVAL}&limit=${batchSize}&endTime=${endTime}`;
 
           try {
@@ -838,11 +2205,8 @@
         },
       });
 
-      const priceFmt = {
-        type: "price",
-        precision: 4,
-        minMove: 0.0001,
-      };
+      // Price format is applied dynamically per-symbol in applyPriceFormat()
+      const priceFmt = { type: "price", precision: 2, minMove: 0.01 };
 
       candleSeries = chart.addSeries(LightweightCharts.CandlestickSeries, {
         upColor: "#00E676",
@@ -2070,6 +3434,7 @@
           tDrawRect.checked = false;
         }
         chart.applyOptions({ handleScroll: !drawingVPModeActive });
+        syncSidebarFromState();
       });
 
       tDrawRect.addEventListener("change", (e) => {
@@ -2078,38 +3443,179 @@
           drawingVPModeActive = false;
           tDrawVP.checked = false;
         }
-        chart.applyOptions({ handleScroll: !drawingModeActive }); // Disable chart pan when drawing
+        chart.applyOptions({ handleScroll: !drawingModeActive });
+        syncSidebarFromState();
       });
     }
 
-    async function run() {
-      initChart();
-      setupToggles();
+    // =============================================
+    // LOADING SCREEN
+    // =============================================
+    function setLoadingText(msg) {
+      const el = document.getElementById("loading-text");
+      if (el) el.textContent = msg;
+    }
+
+    function hideLoadingScreen() {
+      const screen = document.getElementById("loading-screen");
+      if (screen) screen.classList.add("hidden");
+    }
+
+    // =============================================
+    // LEFT SIDEBAR — Drawing Tool Controller
+    // =============================================
+    function syncSidebarFromState() {
+      const sbCursor = document.getElementById("sb-cursor");
+      const sbRect = document.getElementById("sb-rect");
+      const sbVp = document.getElementById("sb-vp");
+      const sbMeasure = document.getElementById("sb-measure");
+      const hintEl = document.getElementById("draw-hint");
+
+      [sbCursor, sbRect, sbVp, sbMeasure].forEach(b => {
+        if (b) b.classList.remove("active");
+      });
+
+      let hintMsg = "";
+      if (drawingModeActive) {
+        sbRect.classList.add("active");
+        hintMsg = "Tap and drag to draw a rectangle";
+      } else if (drawingVPModeActive) {
+        sbVp.classList.add("active");
+        hintMsg = "Tap and drag to draw a Volume Profile zone";
+      } else if (measureState.modeActive) {
+        sbMeasure.classList.add("active");
+        hintMsg = "Tap entry point, then tap exit point";
+      } else {
+        sbCursor.classList.add("active");
+      }
+
+      if (hintEl) {
+        hintEl.textContent = hintMsg;
+        hintEl.classList.toggle("visible", hintMsg !== "");
+        if (hintMsg) {
+          clearTimeout(window._hintTimer);
+          window._hintTimer = setTimeout(() => hintEl.classList.remove("visible"), 4000);
+        }
+      }
+    }
+
+    function setDrawMode(mode) {
+      // mode: "cursor" | "rect" | "vp" | "measure"
+      drawingModeActive = false;
+      drawingVPModeActive = false;
+      measureState.modeActive = false;
+      measureState.step = 0;
+      measureState.startIdx = null;
+      measureState.endIdx = null;
+
+      const tDrawVP = document.getElementById("toggle-draw-vp");
+      const tDrawRect = document.getElementById("toggle-draw-rect");
+      if (tDrawVP) tDrawVP.checked = false;
+      if (tDrawRect) tDrawRect.checked = false;
+
+      const wrapper = document.getElementById("chart-wrapper");
+      if (wrapper) wrapper.style.cursor = "default";
+
+      if (mode === "rect") {
+        drawingModeActive = true;
+        if (tDrawRect) tDrawRect.checked = true;
+        chart.applyOptions({ handleScroll: false });
+      } else if (mode === "vp") {
+        drawingVPModeActive = true;
+        if (tDrawVP) tDrawVP.checked = true;
+        chart.applyOptions({ handleScroll: false });
+      } else if (mode === "measure") {
+        measureState.modeActive = true;
+        chart.applyOptions({ handleScroll: true });
+        if (wrapper) wrapper.style.cursor = "crosshair";
+      } else {
+        // cursor
+        chart.applyOptions({ handleScroll: true });
+      }
+
+      requestAnimationFrame(drawOverlay);
+      syncSidebarFromState();
+    }
+
+    function setupSidebar() {
+      const sbCursor = document.getElementById("sb-cursor");
+      const sbRect = document.getElementById("sb-rect");
+      const sbVp = document.getElementById("sb-vp");
+      const sbMeasure = document.getElementById("sb-measure");
+      const sbDelete = document.getElementById("sb-delete");
+
+      sbCursor.addEventListener("click", () => setDrawMode("cursor"));
+      sbRect.addEventListener("click", () => {
+        if (drawingModeActive) setDrawMode("cursor");
+        else setDrawMode("rect");
+      });
+      sbVp.addEventListener("click", () => {
+        if (drawingVPModeActive) setDrawMode("cursor");
+        else setDrawMode("vp");
+      });
+      sbMeasure.addEventListener("click", () => {
+        if (measureState.modeActive) setDrawMode("cursor");
+        else setDrawMode("measure");
+      });
+      sbDelete.addEventListener("click", () => {
+        // Delete selected, hovered, or last drawn shape
+        if (selectedRectIndex !== -1) {
+          drawnRects.splice(selectedRectIndex, 1);
+          selectedRectIndex = -1; hoveredRectIndex = -1;
+          localStorage.setItem("stat1_drawnRects", JSON.stringify(drawnRects));
+        } else if (selectedVpIndex !== -1) {
+          drawnVpRects.splice(selectedVpIndex, 1);
+          selectedVpIndex = -1; hoveredVpIndex = -1;
+          localStorage.setItem("stat1_drawnVpRects", JSON.stringify(drawnVpRects));
+        } else if (hoveredRectIndex !== -1) {
+          drawnRects.splice(hoveredRectIndex, 1);
+          hoveredRectIndex = -1;
+          localStorage.setItem("stat1_drawnRects", JSON.stringify(drawnRects));
+        } else if (hoveredVpIndex !== -1) {
+          drawnVpRects.splice(hoveredVpIndex, 1);
+          hoveredVpIndex = -1;
+          localStorage.setItem("stat1_drawnVpRects", JSON.stringify(drawnVpRects));
+        }
+        requestAnimationFrame(drawOverlay);
+      });
+
+      // Keyboard shortcut Escape returns to cursor
+      window.addEventListener("keydown", e => {
+        if (e.key === "Escape" && e.target.tagName !== "INPUT") {
+          setDrawMode("cursor");
+        }
+      });
+    }
+
+    // Load data for current SYMBOL+INTERVAL into chart (can be called multiple times)
+    async function loadSymbol() {
+      if (!SYMBOL) return;
+      setLoadingText(`Loading ${SYMBOL} ${INTERVAL}...`);
       const bars = await fetchBinanceData();
 
       if (bars.length === 0) {
-        document.getElementById("status").innerText = "Failed to load data.";
+        setStatus("error", `Failed to load ${SYMBOL}`);
         return;
       }
 
       candleSeries.setData(bars);
       globalBars = bars;
 
-      // Calculate BVC algorithm first for the entire history
+      applyPriceFormat(bars);
+
+      globalCycles = [];
+      globalVsrZones = [];
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
       calculateBVCVolumes(bars, 20);
 
-      // Calculate standard Session VWAP
       const vwapData = calculateStandardVWAP(globalBars);
       vwapSeries.setData(vwapData);
 
-      // Calculate indicators
-      // ATRBot 1 (Original with fill)
       const bot1 = calculateATRBot(bars, ATR_LENGTH, EMA_LENGTH, ATR_MULT);
       globalCycles = bot1.cycles;
 
-      // ATRBot 2 (New with no fill, visible lines)
       const bot2 = calculateATRBot(bars, 10, 14, 1.0);
-
       globalVsrZones = calculateVSR(bars, VSR_LENGTH, VSR_THRESHOLD);
 
       t1Series.setData(bot1.t1Data);
@@ -2117,14 +3623,38 @@
       t1Series2.setData(bot2.t1Data);
       t2Series2.setData(bot2.t2Data);
 
-      document.getElementById("status").innerText =
-        `Data Loaded: ${bars.length} bars. Ready.`;
+      setStatus("ready", `${bars.length.toLocaleString()} bars`);
+      chart.timeScale().scrollToRealTime();
+      requestAnimationFrame(() => syncCanvasSize());
+    }
 
-      // Initial setup for canvas and resize observer
+    async function run() {
+      initChart();
+      setupToggles();
+      setupSettingsPanel();
+      setupIntervalPills();
+      setupCacheManager();
+      setupFullscreen();
+      setupSidebar();
+
       initResizeObserver();
-      setTimeout(() => syncCanvasSize(), 500);
-
+      setTimeout(() => syncCanvasSize(), 300);
       setupMeasureTool();
+
+      // Show loading screen until first data is ready
+      setLoadingText("Fetching exchange info...");
+      allSymbols = await fetchExchangeInfo();
+      setupSymbolSearch();
+
+      const startSym = getStartSymbol();
+      SYMBOL = startSym;
+      document.getElementById("symbol-input").value = startSym;
+      setLoadingText(`Loading ${startSym}...`);
+      setStatus("loading", `Loading ${startSym}...`);
+      await loadSymbol();
+      hideLoadingScreen();
+      setupTickerWS(startSym);
+      syncSidebarFromState();
     }
 
     run();
