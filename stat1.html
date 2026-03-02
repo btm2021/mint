@@ -1,0 +1,2085 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ATR Bot + Volume Profile (Lightweight Charts 5.1)</title>
+    <script src="https://unpkg.com/lightweight-charts@5.1.0/dist/lightweight-charts.standalone.production.js"></script>
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        background-color: #0b0b0e;
+        color: #c3c6ce;
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
+          Arial, sans-serif;
+        overflow: hidden;
+      }
+
+      #topbar {
+        height: 40px;
+        display: flex;
+        align-items: center;
+        padding: 0 20px;
+        background-color: #111118;
+        border-bottom: 1px solid #1f2933;
+        font-size: 14px;
+      }
+
+      #status {
+        color: #00e676;
+        margin-left: auto;
+      }
+
+      #chart-wrapper {
+        position: relative;
+        width: 100vw;
+        height: calc(100vh - 40px);
+      }
+
+      #chart-container {
+        width: 100%;
+        height: 100%;
+      }
+
+      #overlay-canvas {
+        position: absolute;
+        top: 0;
+        left: 0;
+        pointer-events: none;
+        z-index: 5;
+        /* Above grid, below crosshair by using careful positioning or just standard z-index */
+      }
+    </style>
+  </head>
+
+  <body>
+    <div id="topbar">
+      <div style="flex-grow: 1; margin-left: 20px; display: flex; gap: 10px">
+        <label><input type="checkbox" id="toggle-atr1" /> ATR Bot 1</label>
+        <label><input type="checkbox" id="toggle-atr2" /> ATR Bot 2</label>
+        <label><input type="checkbox" id="toggle-vsr" /> VSR</label>
+        <label><input type="checkbox" id="toggle-vpvol" /> VP Bar</label>
+        <label><input type="checkbox" id="toggle-vwap" /> VWAP</label>
+        <span style="border-left: 1px solid #1f2933; margin: 0 5px"></span>
+        <label><input type="checkbox" id="toggle-draw-vp" /> Draw VP</label>
+        <label><input type="checkbox" id="toggle-draw-rect" /> Draw Rect</label>
+      </div>
+      <span id="status">Starting...</span>
+    </div>
+
+    <div id="chart-wrapper">
+      <div id="chart-container"></div>
+      <canvas id="overlay-canvas"></canvas>
+    </div>
+
+    <script>
+      const SYMBOL = "IMXUSDT";
+      const INTERVAL = "15m"; // using 15m to easily grab 10k within a reasonable timeframe (approx 104 days)
+      const LIMIT = 50000;
+
+      // ATR Bot Settings
+      const ATR_LENGTH = 10;
+      const EMA_LENGTH = 21;
+      const ATR_MULT = 1.618;
+
+      // VP Settings
+      const NUM_ROWS = 24;
+      const VA_PCT = 70;
+
+      // VSR Settings
+      const VSR_LENGTH = 20;
+      const VSR_THRESHOLD = 10.0;
+
+      let chart, candleSeries, t1Series, t2Series, t1Series2, t2Series2;
+      const canvas = document.getElementById("overlay-canvas");
+      const ctx = canvas.getContext("2d");
+      let globalCycles = [];
+      let globalVsrZones = [];
+
+      // Measure Tool State
+      let globalBars = [];
+      let measureState = {
+        modeActive: false,
+        step: 0, // 0: inactive/waiting for point 1, 1: waiting for point 2, 2: completed
+        startIdx: null,
+        endIdx: null,
+      };
+      let lastCrosshairLogical = null;
+
+      // Toggles State (Load from localStorage)
+      let showATR1 = localStorage.getItem("stat1_showATR1") !== "0";
+      let showATR2 = localStorage.getItem("stat1_showATR2") !== "0";
+      let showVSR = localStorage.getItem("stat1_showVSR") !== "0";
+      let showVPVol = localStorage.getItem("stat1_showVPVol") !== "0";
+      let showVWAP = localStorage.getItem("stat1_showVWAP") !== "0";
+
+      // Drawing State
+      let drawingModeActive = false;
+      let drawnRects = [];
+      try {
+        let savedRects = localStorage.getItem("stat1_drawnRects");
+        if (savedRects) drawnRects = JSON.parse(savedRects);
+      } catch (e) {}
+
+      let drawingVPModeActive = false;
+      let drawnVpRects = [];
+      try {
+        let savedVps = localStorage.getItem("stat1_drawnVpRects");
+        if (savedVps) drawnVpRects = JSON.parse(savedVps);
+      } catch (e) {}
+
+      let vpCreateState = {
+        active: false,
+        logical1: null,
+        logical2: null, // We only care about logical (time) boundaries for VP calculation
+      };
+
+      let rectDragState = {
+        active: false,
+        mode: "", // 'move', 'nw', 'ne', 'sw', 'se'
+        isVp: false, // Flag to indicate if dragging a VP or simple Rect
+        index: -1,
+        startLogical: null,
+        startPrice: null,
+        originalLogical1: null,
+        originalLogical2: null,
+        originalPrice1: null, // Not strongly used for VP drag, but kept for uniform logic
+        originalPrice2: null,
+      };
+      let rectCreateState = {
+        active: false,
+        logical1: null,
+        price1: null,
+        logical2: null,
+        price2: null,
+      };
+      let hoveredRectIndex = -1;
+      let hoveredVpIndex = -1;
+      let hoveredCorner = "";
+      let selectedRectIndex = -1;
+      let selectedVpIndex = -1;
+      let vwapSeries;
+
+      async function fetchBinanceData() {
+        const cacheKey = `${SYMBOL}_${INTERVAL}_DB_v6`;
+        const statusText = document.getElementById("status");
+        let existingBars = [];
+
+        // 1. Load existing cache
+        const cached = localStorage.getItem(cacheKey);
+        if (cached) {
+          try {
+            const parsed = JSON.parse(cached);
+            if (parsed && parsed.length > 0 && Array.isArray(parsed[0])) {
+              existingBars = parsed.map((p) => ({
+                time: p[0],
+                open: p[1],
+                high: p[2],
+                low: p[3],
+                close: p[4],
+                volume: p[5],
+                buyVolume: p[6],
+              }));
+            }
+          } catch (e) {
+            console.error("Cache parsing error", e);
+          }
+        }
+
+        const batchSize = 1500;
+        const unique = new Map();
+        existingBars.forEach((b) => unique.set(b.time * 1000, b));
+
+        // 2. Fetch missing NEW data (forward)
+        let lastTime =
+          existingBars.length > 0
+            ? existingBars[existingBars.length - 1].time * 1000
+            : 0;
+        if (lastTime > 0) {
+          statusText.innerText = `Checking for new data...`;
+          try {
+            let startTime = lastTime + 1;
+            let url = `https://fapi.binance.com/fapi/v1/klines?symbol=${SYMBOL}&interval=${INTERVAL}&limit=${batchSize}&startTime=${startTime}`;
+            let res = await fetch(url);
+            let data = await res.json();
+            if (data && data.length > 0 && !data.code) {
+              data.forEach((d) => {
+                unique.set(d[0], {
+                  time: d[0] / 1000,
+                  open: parseFloat(d[1]),
+                  high: parseFloat(d[2]),
+                  low: parseFloat(d[3]),
+                  close: parseFloat(d[4]),
+                  volume: parseFloat(d[5]),
+                  buyVolume: parseFloat(d[9]),
+                });
+              });
+              console.log(`Added ${data.length} new bars.`);
+            }
+          } catch (e) {
+            console.error("Fetch new data failed", e);
+          }
+        }
+
+        // 3. Fetch missing HISTORICAL data (backward)
+        let currentSize = unique.size;
+        if (currentSize < LIMIT) {
+          let firstTime =
+            existingBars.length > 0 ? existingBars[0].time * 1000 : Date.now();
+          let endTime = firstTime - 1;
+
+          while (unique.size < LIMIT) {
+            statusText.innerText = `Fetching history... (${unique.size}/${LIMIT})`;
+            let url = `https://fapi.binance.com/fapi/v1/klines?symbol=${SYMBOL}&interval=${INTERVAL}&limit=${batchSize}&endTime=${endTime}`;
+
+            try {
+              let res = await fetch(url);
+              let data = await res.json();
+
+              if (!data || data.length === 0 || data.code) break;
+
+              data.forEach((d) => {
+                unique.set(d[0], {
+                  time: d[0] / 1000,
+                  open: parseFloat(d[1]),
+                  high: parseFloat(d[2]),
+                  low: parseFloat(d[3]),
+                  close: parseFloat(d[4]),
+                  volume: parseFloat(d[5]),
+                  buyVolume: parseFloat(d[9]),
+                });
+              });
+
+              endTime = data[0][0] - 1;
+              if (data.length < batchSize) break;
+            } catch (e) {
+              console.error("Fetch history failed", e);
+              break;
+            }
+          }
+        }
+
+        // 4. Sort and Limit
+        let sorted = Array.from(unique.values()).sort(
+          (a, b) => a.time - b.time,
+        );
+        if (sorted.length > LIMIT) {
+          sorted = sorted.slice(sorted.length - LIMIT);
+        }
+
+        // 5. Cache as array of arrays
+        const compressed = sorted.map((c) => [
+          c.time,
+          c.open,
+          c.high,
+          c.low,
+          c.close,
+          c.volume,
+          c.buyVolume,
+        ]);
+
+        try {
+          localStorage.setItem(cacheKey, JSON.stringify(compressed));
+        } catch (err) {
+          console.warn("Storage full, clearing old keys...");
+          localStorage.clear(); // Extreme cleanup
+          try {
+            localStorage.setItem(cacheKey, JSON.stringify(compressed));
+          } catch (e) {}
+        }
+
+        return sorted;
+      }
+
+      function calculateATRBot(bars, atrLen, emaLen, mult) {
+        if (bars.length === 0) return { t1Data: [], t2Data: [], cycles: [] };
+
+        // 1. Calculate TR
+        let tr = new Array(bars.length);
+        for (let i = 0; i < bars.length; i++) {
+          if (i === 0) {
+            tr[i] = bars[i].high - bars[i].low;
+          } else {
+            let h_l = bars[i].high - bars[i].low;
+            let h_pc = Math.abs(bars[i].high - bars[i - 1].close);
+            let l_pc = Math.abs(bars[i].low - bars[i - 1].close);
+            tr[i] = Math.max(h_l, h_pc, l_pc);
+          }
+        }
+
+        // 2. Calculate ATR (RMA of TR)
+        let atr = new Array(bars.length);
+        let alpha = 1 / atrLen;
+        let sum = 0;
+        for (let i = 0; i < bars.length; i++) {
+          if (i < atrLen) {
+            sum += tr[i];
+            atr[i] = sum / (i + 1);
+          } else {
+            atr[i] = alpha * tr[i] + (1 - alpha) * atr[i - 1];
+          }
+        }
+
+        // 3. Calculate EMA
+        let ema = new Array(bars.length);
+        let k = 2 / (emaLen + 1);
+        for (let i = 0; i < bars.length; i++) {
+          if (i === 0) ema[i] = bars[i].close;
+          else ema[i] = bars[i].close * k + ema[i - 1] * (1 - k);
+        }
+
+        // 4. Calculate Trail2 & State
+        let trail2 = new Array(bars.length);
+        let state = new Array(bars.length); // 1 = Uptrend, -1 = Downtrend
+
+        for (let i = 0; i < bars.length; i++) {
+          let loss = atr[i] * mult;
+          let t1 = ema[i];
+
+          if (i === 0) {
+            trail2[i] = t1 - loss;
+            state[i] = 1;
+            continue;
+          }
+
+          let prev_t2 = trail2[i - 1];
+          let prev_t1 = ema[i - 1];
+          let curr_t2;
+
+          if (t1 > prev_t2 && prev_t1 > prev_t2) {
+            curr_t2 = Math.max(prev_t2, t1 - loss);
+          } else if (t1 < prev_t2 && prev_t1 < prev_t2) {
+            curr_t2 = Math.min(prev_t2, t1 + loss);
+          } else if (t1 > prev_t2) {
+            curr_t2 = t1 - loss;
+          } else {
+            curr_t2 = t1 + loss;
+          }
+
+          trail2[i] = curr_t2;
+          state[i] = t1 > curr_t2 ? 1 : -1;
+        }
+
+        // 5. Build LWC Line Data & Extract Cycles
+        let t1Data = [];
+        let t2Data = [];
+        let cycles = [];
+        let currentCycle = null;
+
+        for (let i = 0; i < bars.length; i++) {
+          let t = bars[i].time;
+          let isUp = state[i] === 1;
+          let color = isUp ? "#00E676" : "#FF5252";
+
+          t1Data.push({ time: t, value: ema[i], color: color });
+          t2Data.push({ time: t, value: trail2[i], color: color });
+
+          let barData = { ...bars[i], t1: ema[i], t2: trail2[i] };
+
+          if (currentCycle === null) {
+            currentCycle = {
+              state: state[i],
+              startIndex: i,
+              endIndex: i,
+              bars: [barData],
+            };
+          } else if (currentCycle.state !== state[i]) {
+            cycles.push(currentCycle);
+            currentCycle = {
+              state: state[i],
+              startIndex: i,
+              endIndex: i,
+              bars: [barData],
+            };
+          } else {
+            currentCycle.endIndex = i;
+            currentCycle.bars.push(barData);
+          }
+        }
+
+        if (currentCycle) {
+          cycles.push(currentCycle);
+        }
+        return { t1Data, t2Data, cycles };
+      }
+
+      // Bulk Volume Classification (BVC) Algorithm
+      function calculateBVCVolumes(bars, windowSize = 20) {
+        // Approximation of standard normal CDF
+        function normalCDF(x) {
+          let t = 1 / (1 + 0.2316419 * Math.abs(x));
+          let d = 0.3989423 * Math.exp((-x * x) / 2);
+          let prob =
+            d *
+            t *
+            (0.3193815 +
+              t *
+                (-0.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274))));
+          return x > 0 ? 1 - prob : prob;
+        }
+
+        let deltaPArray = bars.map((b) => b.close - b.open);
+
+        for (let i = 0; i < bars.length; i++) {
+          let b = bars[i];
+          let startIdx = Math.max(0, i - windowSize + 1);
+          let count = i - startIdx + 1;
+
+          let mean = 0;
+          for (let j = startIdx; j <= i; j++) mean += deltaPArray[j];
+          mean /= count;
+
+          let variance = 0;
+          for (let j = startIdx; j <= i; j++)
+            variance += Math.pow(deltaPArray[j] - mean, 2);
+          variance /= count;
+
+          let stdDev = Math.sqrt(variance);
+          let deltaP = deltaPArray[i];
+
+          let Z = 0;
+          if (stdDev > 1e-10) {
+            Z = deltaP / stdDev;
+          } else {
+            Z = deltaP > 0 ? 3 : deltaP < 0 ? -3 : 0;
+          }
+
+          let phiZ = normalCDF(Z);
+          b.bvcBuy = b.volume * phiZ;
+          b.bvcSell = b.volume * (1 - phiZ);
+        }
+      }
+
+      function calculateFRVP(bars) {
+        let numRows = NUM_ROWS;
+        let vaPct = VA_PCT;
+        let profile = [];
+        // Simple logic: We'll calculate a single Fixed Range Volume Profile for the visible data
+        if (bars.length === 0)
+          return {
+            rows: [],
+            maxVol: 0,
+            pocPrice: 0,
+            pocDelta: 0,
+            vahPrice: 0,
+            valPrice: 0,
+          };
+
+        let highestHigh = -Infinity;
+        let lowestLow = Infinity;
+        bars.forEach((d) => {
+          if (d.high > highestHigh) highestHigh = d.high;
+          if (d.low < lowestLow) lowestLow = d.low;
+        });
+
+        if (
+          highestHigh === -Infinity ||
+          lowestLow === Infinity ||
+          Math.abs(highestHigh - lowestLow) < 1e-10
+        ) {
+          return {
+            rows: [],
+            maxVol: 0,
+            pocPrice: 0,
+            pocDelta: 0,
+            vahPrice: 0,
+            valPrice: 0,
+          };
+        }
+
+        let rowHeight = (highestHigh - lowestLow) / numRows;
+        let rows = new Array(numRows).fill(0).map((_, i) => ({
+          priceTop: highestHigh - i * rowHeight,
+          priceBottom: highestHigh - (i + 1) * rowHeight,
+          vol: 0,
+          buyVol: 0,
+          sellVol: 0,
+          poc: false,
+          vah: false,
+          val: false,
+          inVA: false,
+        }));
+
+        // Distribute volume into rows using BVC logic
+        for (let b of bars) {
+          if (b.volume <= 0) continue;
+
+          let startRow = Math.floor((highestHigh - b.high) / rowHeight);
+          let endRow = Math.floor((highestHigh - b.low) / rowHeight);
+
+          startRow = Math.max(0, Math.min(numRows - 1, startRow));
+          endRow = Math.max(0, Math.min(numRows - 1, endRow));
+
+          let bBuy = b.bvcBuy || 0;
+          let bSell = b.bvcSell || 0;
+
+          if (b.high === b.low) {
+            rows[startRow].vol += b.volume;
+            rows[startRow].buyVol += bBuy;
+            rows[startRow].sellVol += bSell;
+            continue;
+          }
+
+          let totalOverlap = 0;
+          let overlapInfos = [];
+
+          for (let r = startRow; r <= endRow; r++) {
+            let rowTop = highestHigh - r * rowHeight;
+            let rowBottom = highestHigh - (r + 1) * rowHeight;
+            let overlapBottom = Math.max(b.low, rowBottom);
+            let overlapTop = Math.min(b.high, rowTop);
+            let overlap = overlapTop - overlapBottom;
+            if (overlap > 0) {
+              overlapInfos.push({ r, overlap });
+              totalOverlap += overlap;
+            }
+          }
+
+          if (totalOverlap > 0) {
+            for (let info of overlapInfos) {
+              let pct = info.overlap / totalOverlap;
+              rows[info.r].vol += pct * b.volume;
+              rows[info.r].buyVol += pct * bBuy;
+              rows[info.r].sellVol += pct * bSell;
+            }
+          } else {
+            rows[startRow].vol += b.volume;
+            rows[startRow].buyVol += bBuy;
+            rows[startRow].sellVol += bSell;
+          }
+        }
+
+        // Find POC
+        let pocIndex = 0;
+        let maxVol = 0;
+        rows.forEach((r, index) => {
+          let totalRowVol = r.buyVol + r.sellVol; // Should be approximately r.vol
+          if (totalRowVol > maxVol) {
+            maxVol = totalRowVol;
+            pocIndex = index;
+          }
+        });
+
+        let pocDelta = rows[pocIndex].buyVol - rows[pocIndex].sellVol;
+
+        rows[pocIndex].poc = true;
+        let pocPrice =
+          (rows[pocIndex].priceTop + rows[pocIndex].priceBottom) / 2;
+
+        // Calculate Value Area
+        let totalVol = rows.reduce((sum, r) => sum + r.vol, 0);
+        let vaVol = maxVol;
+        rows[pocIndex].inVA = true;
+        let upIndex = pocIndex - 1; // Since index 0 is Top, upIndex is numerically smaller (higher price)
+        let downIndex = pocIndex + 1; // lower price
+
+        while (vaVol < totalVol * (vaPct / 100)) {
+          let volUp = upIndex >= 0 ? rows[upIndex].vol : 0;
+          let volDown = downIndex < numRows ? rows[downIndex].vol : 0;
+
+          if (volUp === 0 && volDown === 0) break;
+
+          // Pick the larger row volume to add to Value Area
+          if (volUp > volDown) {
+            vaVol += volUp;
+            rows[upIndex].inVA = true;
+            upIndex--;
+          } else {
+            vaVol += volDown;
+            rows[downIndex].inVA = true;
+            downIndex++;
+          }
+        }
+
+        // Find VAH and VAL
+        let vahPrice = rows.find((r) => r.inVA)?.priceTop || highestHigh;
+        let valPrice =
+          [...rows].reverse().find((r) => r.inVA)?.priceBottom || lowestLow;
+
+        return { rows, pocPrice, pocDelta, vahPrice, valPrice, maxVol };
+      }
+
+      function calculateVSR(bars, length = 10, threshold = 5.0) {
+        let zones = [];
+        let prev_volume = NaN,
+          prev_high = NaN,
+          prev_low = NaN,
+          prev_close = NaN,
+          prev_stdev = NaN;
+        let volume_changes = [];
+        let vsr_upper = NaN,
+          vsr_lower = NaN;
+        let currentZone = null;
+
+        for (let i = 0; i < bars.length; i++) {
+          let b = bars[i];
+          let volume = b.volume,
+            high = b.high,
+            low = b.low,
+            close = b.close;
+
+          let change = 0;
+          if (!isNaN(prev_volume) && prev_volume !== 0) {
+            change = volume / prev_volume - 1;
+          }
+
+          volume_changes.push(change);
+          if (volume_changes.length > length) volume_changes.shift();
+
+          let stdev = 0;
+          if (volume_changes.length >= 2) {
+            let sum = volume_changes.reduce((a, x) => a + x, 0);
+            let mean = sum / volume_changes.length;
+            let variance =
+              volume_changes.reduce((a, x) => a + Math.pow(x - mean, 2), 0) /
+              volume_changes.length;
+            stdev = Math.sqrt(variance);
+          }
+
+          let difference = 0,
+            signal = 0;
+          if (
+            !isNaN(prev_stdev) &&
+            prev_stdev !== 0 &&
+            volume_changes.length >= 2
+          ) {
+            difference = change / prev_stdev;
+            signal = Math.abs(difference);
+          }
+
+          if (signal > threshold && !isNaN(prev_high)) {
+            let proposed_upper = Math.max(prev_high, prev_close);
+            let proposed_lower = Math.min(prev_low, prev_close);
+
+            let isOverlap = false;
+            if (!isNaN(vsr_upper) && !isNaN(vsr_lower)) {
+              if (proposed_lower <= vsr_upper && vsr_lower <= proposed_upper) {
+                isOverlap = true;
+              }
+            }
+
+            if (isOverlap) {
+              vsr_upper = Math.max(vsr_upper, proposed_upper);
+              vsr_lower = Math.min(vsr_lower, proposed_lower);
+              if (currentZone) {
+                currentZone.upper = vsr_upper;
+                currentZone.lower = vsr_lower;
+              }
+            } else {
+              vsr_upper = proposed_upper;
+              vsr_lower = proposed_lower;
+              if (currentZone) {
+                currentZone.endIndex = i - 1;
+                zones.push(currentZone);
+              }
+              currentZone = {
+                startIndex: i,
+                endIndex: i,
+                upper: vsr_upper,
+                lower: vsr_lower,
+              };
+            }
+          } else if (currentZone) {
+            currentZone.endIndex = i;
+          }
+
+          prev_volume = volume;
+          prev_high = high;
+          prev_low = low;
+          prev_close = close;
+          prev_stdev = stdev;
+        }
+
+        if (currentZone) {
+          currentZone.endIndex = bars.length - 1;
+          zones.push(currentZone);
+        }
+        return zones;
+      }
+
+      function calculateStandardVWAP(bars) {
+        if (!bars || bars.length === 0) return;
+        let currentDay = null;
+        let sumVol = 0;
+        let sumVolPrice = 0;
+
+        for (let i = 0; i < bars.length; i++) {
+          let b = bars[i];
+          let date = new Date(b.time * 1000);
+          // Standard session resets at 00:00 UTC
+          let dayStr =
+            date.getUTCFullYear() +
+            "-" +
+            date.getUTCMonth() +
+            "-" +
+            date.getUTCDate();
+
+          if (dayStr !== currentDay) {
+            currentDay = dayStr;
+            sumVol = 0;
+            sumVolPrice = 0;
+          }
+
+          let typPrice = (b.high + b.low + b.close) / 3;
+          sumVol += b.volume;
+          sumVolPrice += b.volume * typPrice;
+
+          b.vwap = sumVol > 0 ? sumVolPrice / sumVol : b.close;
+        }
+      }
+
+      function calculateStandardVWAP(bars) {
+        let vwapData = [];
+        if (!bars || bars.length === 0) return vwapData;
+        let currentDay = null;
+        let sumVol = 0;
+        let sumVolPrice = 0;
+
+        for (let i = 0; i < bars.length; i++) {
+          let b = bars[i];
+          let date = new Date(b.time * 1000);
+          // Standard session usually resets at 00:00 UTC
+          let dayStr =
+            date.getUTCFullYear() +
+            "-" +
+            date.getUTCMonth() +
+            "-" +
+            date.getUTCDate();
+
+          if (dayStr !== currentDay) {
+            currentDay = dayStr;
+            sumVol = 0;
+            sumVolPrice = 0;
+          }
+
+          let typPrice = (b.high + b.low + b.close) / 3;
+          sumVol += b.volume;
+          sumVolPrice += b.volume * typPrice;
+
+          b.vwap = sumVol > 0 ? sumVolPrice / sumVol : b.close;
+
+          // For native series, we don't strictly need blanks unless gap is huge,
+          // but we push it to data array properly.
+          vwapData.push({ time: b.time, value: b.vwap });
+        }
+        return vwapData;
+      }
+
+      function initChart() {
+        const container = document.getElementById("chart-container");
+        chart = LightweightCharts.createChart(container, {
+          layout: {
+            background: { type: "solid", color: "#0B0B0E" },
+            textColor: "#C3C6CE",
+          },
+          grid: {
+            vertLines: { color: "rgba(42, 46, 57, 0.8)" },
+            horzLines: { color: "rgba(42, 46, 57, 0.3)" },
+          },
+          crosshair: {
+            mode: 0, // 0 = Normal (Chuột tự do, free floating)
+          },
+          timeScale: {
+            timeVisible: true,
+            secondsVisible: false,
+          },
+          handleScroll: {
+            mouseWheel: true,
+            pressedMouseMove: true,
+            horzTouchDrag: true,
+            vertTouchDrag: true,
+          },
+          handleScale: {
+            axisPressedMouseMove: true,
+            mouseWheel: true,
+            pinch: true,
+          },
+          kinematicScroll: {
+            touch: true,
+            mouse: true,
+          },
+        });
+
+        const priceFmt = {
+          type: "price",
+          precision: 4,
+          minMove: 0.0001,
+        };
+
+        candleSeries = chart.addSeries(LightweightCharts.CandlestickSeries, {
+          upColor: "#00E676",
+          downColor: "#FF5252",
+          borderVisible: false,
+          wickUpColor: "#00E676",
+          wickDownColor: "#FF5252",
+          priceFormat: priceFmt,
+        });
+
+        t1Series = chart.addSeries(LightweightCharts.LineSeries, {
+          lineWidth: 2,
+          crosshairMarkerVisible: false,
+          lastValueVisible: false,
+          priceLineVisible: false,
+          visible: false, // hide line, we only need it for the canvas fill
+          priceFormat: priceFmt,
+        });
+
+        t2Series = chart.addSeries(LightweightCharts.LineSeries, {
+          lineWidth: 2,
+          crosshairMarkerVisible: false,
+          lastValueVisible: false,
+          priceLineVisible: false,
+          visible: false, // hide line, we only need it for the canvas fill
+          priceFormat: priceFmt,
+        });
+
+        t1Series2 = chart.addSeries(LightweightCharts.LineSeries, {
+          lineWidth: 2,
+          lineStyle: LightweightCharts.LineStyle.Solid,
+          crosshairMarkerVisible: false,
+          lastValueVisible: false,
+          priceLineVisible: false,
+          priceFormat: priceFmt,
+          visible: showATR2,
+        });
+
+        t2Series2 = chart.addSeries(LightweightCharts.LineSeries, {
+          lineWidth: 2,
+          lineStyle: LightweightCharts.LineStyle.Solid,
+          crosshairMarkerVisible: false,
+          lastValueVisible: false,
+          priceLineVisible: false,
+          priceFormat: priceFmt,
+          visible: showATR2,
+        });
+
+        vwapSeries = chart.addSeries(LightweightCharts.LineSeries, {
+          color: "rgba(255, 255, 255, 0.9)",
+          lineWidth: 2,
+          lineStyle: LightweightCharts.LineStyle.Solid,
+          crosshairMarkerVisible: false,
+          lastValueVisible: true,
+          priceLineVisible: false,
+          priceFormat: priceFmt,
+          visible: showVWAP,
+        });
+
+        // Sync canvas when chart moves or resizes
+        chart.timeScale().subscribeVisibleLogicalRangeChange(() => {
+          requestAnimationFrame(drawOverlay);
+        });
+
+        chart.timeScale().subscribeSizeChange(() => {
+          syncCanvasSize();
+        });
+
+        window.addEventListener("resize", syncCanvasSize);
+      }
+
+      function syncCanvasSize() {
+        if (!chart || !candleSeries) return;
+        const width = chart.timeScale().width();
+        const height =
+          document.getElementById("chart-container").clientHeight - 26; // approx time scale height
+
+        canvas.width = width;
+        canvas.height = height;
+        canvas.style.width = width + "px";
+        canvas.style.height = height + "px";
+
+        drawOverlay();
+      }
+
+      function drawOverlay() {
+        if (!chart || !candleSeries || !globalCycles.length) return;
+
+        const timeScale = chart.timeScale();
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        let visibleRange = timeScale.getVisibleLogicalRange();
+        if (!visibleRange) return;
+
+        // Pass 0: Draw VSR Zones
+        if (showVSR) {
+          for (let z of globalVsrZones) {
+            if (
+              z.endIndex < visibleRange.from ||
+              z.startIndex > visibleRange.to
+            )
+              continue;
+
+            let xStart = timeScale.logicalToCoordinate(z.startIndex);
+            let xEnd = timeScale.logicalToCoordinate(z.endIndex);
+            if (xStart === null) xStart = -1000;
+            if (xEnd === null) xEnd = canvas.width + 1000;
+
+            let cycleW = xEnd - xStart;
+            if (cycleW <= 0) continue;
+
+            let y1 = candleSeries.priceToCoordinate(z.upper);
+            let y2 = candleSeries.priceToCoordinate(z.lower);
+
+            if (y1 !== null && y2 !== null) {
+              let topY = Math.min(y1, y2);
+              let botY = Math.max(y1, y2);
+              ctx.fillStyle = "rgba(255, 235, 59, 0.2)"; // #FFEB3B with 20% transparency for VSR base
+              ctx.fillRect(xStart, topY, cycleW, botY - topY);
+
+              ctx.strokeStyle = "rgba(255, 235, 59, 0.4)";
+              ctx.lineWidth = 1;
+              ctx.beginPath();
+              ctx.moveTo(xStart, topY);
+              ctx.lineTo(xEnd, topY);
+              ctx.moveTo(xStart, botY);
+              ctx.lineTo(xEnd, botY);
+              ctx.stroke();
+            }
+          }
+        }
+
+        // First pass: Draw ATR Cloud Fills
+        if (showATR1) {
+          for (let cycle of globalCycles) {
+            if (
+              cycle.endIndex < visibleRange.from ||
+              cycle.startIndex > visibleRange.to
+            )
+              continue;
+
+            ctx.beginPath();
+            let hasMoved = false;
+
+            // Move along T1
+            for (let i = 0; i < cycle.bars.length; i++) {
+              let b = cycle.bars[i];
+              let logicalIdx = cycle.startIndex + i;
+              if (
+                logicalIdx < Math.floor(visibleRange.from) ||
+                logicalIdx > Math.ceil(visibleRange.to)
+              )
+                continue;
+
+              let x = timeScale.logicalToCoordinate(logicalIdx);
+              let y = candleSeries.priceToCoordinate(b.t1);
+              if (x !== null && y !== null) {
+                if (!hasMoved) {
+                  ctx.moveTo(x, y);
+                  hasMoved = true;
+                } else {
+                  ctx.lineTo(x, y);
+                }
+              }
+            }
+
+            // Move back along T2
+            if (hasMoved) {
+              for (let i = cycle.bars.length - 1; i >= 0; i--) {
+                let b = cycle.bars[i];
+                let logicalIdx = cycle.startIndex + i;
+                if (
+                  logicalIdx < Math.floor(visibleRange.from) ||
+                  logicalIdx > Math.ceil(visibleRange.to)
+                )
+                  continue;
+
+                let x = timeScale.logicalToCoordinate(logicalIdx);
+                let y = candleSeries.priceToCoordinate(b.t2);
+                if (x !== null && y !== null) {
+                  ctx.lineTo(x, y);
+                }
+              }
+              ctx.closePath();
+              // TV style ATR cloud fills
+              ctx.fillStyle =
+                cycle.state === 1
+                  ? "rgba(0, 230, 118, 0.2)"
+                  : "rgba(255, 82, 82, 0.2)";
+              ctx.fill();
+            }
+          }
+        }
+
+        // Recalculate and Draw VPs
+        // Since VPs only depend on logical from/to, we extrapolate price min/max from bars
+        let allVpToDraw = [...drawnVpRects];
+        if (
+          vpCreateState.active &&
+          vpCreateState.logical1 !== null &&
+          vpCreateState.logical2 !== null
+        ) {
+          allVpToDraw.push({
+            l1: vpCreateState.logical1,
+            l2: vpCreateState.logical2,
+          });
+        }
+
+        for (let i = 0; i < allVpToDraw.length; i++) {
+          let v = allVpToDraw[i];
+          let idxFrom = Math.min(Math.round(v.l1), Math.round(v.l2));
+          let idxTo = Math.max(Math.round(v.l1), Math.round(v.l2));
+
+          if (idxTo < visibleRange.from || idxFrom > visibleRange.to) continue; // Out of view
+          idxFrom = Math.max(0, idxFrom);
+          idxTo = Math.min(globalBars.length - 1, idxTo);
+
+          if (idxTo - idxFrom < 0) continue;
+
+          let barsSlice = globalBars.slice(idxFrom, idxTo + 1);
+          if (barsSlice.length === 0) continue;
+
+          let highestHigh = -Infinity,
+            lowestLow = Infinity;
+          barsSlice.forEach((b) => {
+            if (b.high > highestHigh) highestHigh = b.high;
+            if (b.low < lowestLow) lowestLow = b.low;
+          });
+
+          // Set dynamic prices for bounding box
+          v.p2 = highestHigh; // Top
+          v.p1 = lowestLow; // Bottom
+
+          let xStart = timeScale.logicalToCoordinate(v.l1 > v.l2 ? v.l2 : v.l1);
+          let xEnd = timeScale.logicalToCoordinate(v.l1 > v.l2 ? v.l1 : v.l2);
+          if (xStart === null) xStart = -1000;
+          if (xEnd === null) xEnd = canvas.width + 1000;
+
+          let cycleW = xEnd - xStart;
+          if (cycleW <= 0) continue;
+
+          // Draw Background/Selection Box for VP Region
+          let hasHover =
+            (i === hoveredVpIndex && !vpCreateState.active) ||
+            (rectDragState.active &&
+              rectDragState.isVp &&
+              rectDragState.index === i);
+          let isSel = i === selectedVpIndex && !vpCreateState.active;
+
+          if (hasHover || isSel || vpCreateState.active) {
+            let yH = candleSeries.priceToCoordinate(highestHigh);
+            let yL = candleSeries.priceToCoordinate(lowestLow);
+            if (yH !== null && yL !== null) {
+              ctx.fillStyle = isSel
+                ? "rgba(33, 150, 243, 0.15)"
+                : hasHover
+                  ? "rgba(33, 150, 243, 0.1)"
+                  : "rgba(33, 150, 243, 0.05)";
+              ctx.strokeStyle = isSel
+                ? "rgba(33, 150, 243, 0.6)"
+                : "rgba(33, 150, 243, 0.3)";
+              ctx.lineWidth = 1;
+              ctx.fillRect(xStart, yH, cycleW, yL - yH);
+              ctx.strokeRect(xStart, yH, cycleW, yL - yH);
+
+              if ((hasHover || isSel) && !vpCreateState.active) {
+                ctx.fillStyle = "#C3C6CE";
+                ctx.strokeStyle = "#0B0B0E";
+                let hs = 6;
+                // Left and Right handles only since VP height is determined by bars inside
+                ctx.fillRect(xStart - hs / 2, (yH + yL) / 2 - hs / 2, hs, hs);
+                ctx.strokeRect(xStart - hs / 2, (yH + yL) / 2 - hs / 2, hs, hs);
+                ctx.fillRect(xEnd - hs / 2, (yH + yL) / 2 - hs / 2, hs, hs);
+                ctx.strokeRect(xEnd - hs / 2, (yH + yL) / 2 - hs / 2, hs, hs);
+              }
+            }
+          }
+
+          // If just dragging/creating and not finalized, we can optionally skip heavy VP calculation to save lag, but keeping it smooth:
+          if (!v.vpCache || vpCreateState.active || rectDragState.active) {
+            // Rough caching logic (for real app needs refine, but fine here)
+            v.vp = calculateFRVP(barsSlice); // Re-calculate dynamically
+          }
+
+          let cVP = v.vp;
+          if (!cVP) continue;
+
+          let maxBarWidth = Math.min(150, cycleW * 0.5);
+
+          let yVAH = candleSeries.priceToCoordinate(cVP.vahPrice);
+          let yVAL = candleSeries.priceToCoordinate(cVP.valPrice);
+
+          if (yVAH !== null && yVAL !== null) {
+            let topY = Math.min(yVAH, yVAL);
+            let botY = Math.max(yVAH, yVAL);
+            ctx.fillStyle = "rgba(41, 98, 255, 0.05)";
+            ctx.fillRect(xStart, topY, cycleW, botY - topY);
+
+            ctx.setLineDash([4, 4]);
+            ctx.lineWidth = 1;
+            ctx.strokeStyle = "rgba(33, 150, 243, 0.8)";
+            ctx.beginPath();
+            ctx.moveTo(xStart, topY);
+            ctx.lineTo(xEnd, topY);
+            ctx.stroke();
+            ctx.strokeStyle = "rgba(255, 193, 7, 0.8)";
+            ctx.beginPath();
+            ctx.moveTo(xStart, botY);
+            ctx.lineTo(xEnd, botY);
+            ctx.stroke();
+            ctx.setLineDash([]);
+          }
+
+          if (showVPVol) {
+            for (let r of cVP.rows) {
+              let yTop = candleSeries.priceToCoordinate(r.priceTop);
+              let yBottom = candleSeries.priceToCoordinate(r.priceBottom);
+              if (yTop !== null && yBottom !== null) {
+                let topY = Math.min(yTop, yBottom);
+                let hAdjusted =
+                  Math.abs(yBottom - yTop) -
+                  (Math.abs(yBottom - yTop) > 2 ? 1 : 0);
+
+                let buyW = (r.buyVol / cVP.maxVol) * maxBarWidth;
+                let sellW = (r.sellVol / cVP.maxVol) * maxBarWidth;
+
+                let baseColor =
+                  r.buyVol >= r.sellVol
+                    ? {
+                        bright: r.inVA
+                          ? "rgba(22, 112, 175, 0.95)"
+                          : "rgba(22, 112, 175, 0.4)",
+                        dark: r.inVA
+                          ? "rgba(23, 72, 111, 0.95)"
+                          : "rgba(23, 72, 111, 0.4)",
+                        medium: r.inVA
+                          ? "rgba(23, 52, 79, 0.95)"
+                          : "rgba(23, 52, 79, 0.4)",
+                      }
+                    : {
+                        bright: r.inVA
+                          ? "rgba(183, 145, 38, 0.95)"
+                          : "rgba(183, 145, 38, 0.4)",
+                        dark: r.inVA
+                          ? "rgba(103, 89, 43, 0.95)"
+                          : "rgba(103, 89, 43, 0.4)",
+                        medium: r.inVA
+                          ? "rgba(62, 60, 45, 0.95)"
+                          : "rgba(62, 60, 45, 0.4)",
+                      };
+
+                let currX = xStart;
+                let deltaW = Math.abs(buyW - sellW);
+                let weakW = Math.min(buyW, sellW);
+                let strongW = Math.max(buyW, sellW) - deltaW;
+
+                if (deltaW > 0) {
+                  ctx.fillStyle = baseColor.bright;
+                  ctx.fillRect(currX, topY, deltaW, hAdjusted);
+                  currX += deltaW;
+                }
+                if (weakW > 0) {
+                  ctx.fillStyle = baseColor.dark;
+                  ctx.fillRect(currX, topY, weakW, hAdjusted);
+                  currX += weakW;
+                }
+                if (strongW > 0) {
+                  ctx.fillStyle = baseColor.medium;
+                  ctx.fillRect(currX, topY, strongW, hAdjusted);
+                }
+              }
+            }
+          }
+
+          let pocY = candleSeries.priceToCoordinate(cVP.pocPrice);
+          if (pocY !== null) {
+            ctx.strokeStyle =
+              cVP.pocDelta >= 0
+                ? "rgba(76, 175, 80, 0.9)"
+                : "rgba(255, 82, 82, 0.9)";
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(xStart, pocY);
+            ctx.lineTo(xEnd, pocY);
+            ctx.stroke();
+          }
+        }
+
+        // Pass 3: Draw Rectangles (User Drawn)
+        let allRectsToDraw = [...drawnRects];
+        if (
+          rectCreateState.active &&
+          rectCreateState.logical1 !== null &&
+          rectCreateState.price1 !== null &&
+          rectCreateState.logical2 !== null &&
+          rectCreateState.price2 !== null
+        ) {
+          allRectsToDraw.push({
+            l1: rectCreateState.logical1,
+            p1: rectCreateState.price1,
+            l2: rectCreateState.logical2,
+            p2: rectCreateState.price2,
+          });
+        }
+
+        for (let i = 0; i < allRectsToDraw.length; i++) {
+          let rect = allRectsToDraw[i];
+          let x1 = timeScale.logicalToCoordinate(rect.l1);
+          let x2 = timeScale.logicalToCoordinate(rect.l2);
+          let y1 = candleSeries.priceToCoordinate(rect.p1);
+          let y2 = candleSeries.priceToCoordinate(rect.p2);
+
+          if (x1 !== null && x2 !== null && y1 !== null && y2 !== null) {
+            let rx = Math.min(x1, x2);
+            let ry = Math.min(y1, y2);
+            let rw = Math.abs(x2 - x1);
+            let rh = Math.abs(y2 - y1);
+
+            let isHovered =
+              i === hoveredRectIndex ||
+              (rectDragState.active && rectDragState.index === i);
+            let isSelected = i === selectedRectIndex;
+
+            ctx.fillStyle = isSelected
+              ? "rgba(156, 39, 176, 0.4)"
+              : isHovered
+                ? "rgba(156, 39, 176, 0.3)"
+                : "rgba(156, 39, 176, 0.2)"; // Purple transparent
+            ctx.fillRect(rx, ry, rw, rh);
+
+            ctx.strokeStyle = isSelected
+              ? "rgba(255, 64, 129, 1)"
+              : isHovered
+                ? "rgba(216, 27, 96, 0.9)"
+                : "rgba(156, 39, 176, 0.8)"; // Solid border
+            ctx.lineWidth = isSelected || isHovered ? 2 : 1;
+            ctx.strokeRect(rx, ry, rw, rh);
+
+            // Draw resize handles (corners) if hovered or selected
+            if ((isHovered || isSelected) && !rectCreateState.active) {
+              ctx.fillStyle = "#C3C6CE"; // Light handle color
+              ctx.strokeStyle = "#0B0B0E";
+              ctx.lineWidth = 1;
+              let hs = 6; // handle size
+
+              let corners = [
+                { cx: rx, cy: ry }, // NW
+                { cx: rx + rw, cy: ry }, // NE
+                { cx: rx, cy: ry + rh }, // SW
+                { cx: rx + rw, cy: ry + rh }, // SE
+              ];
+
+              for (let corner of corners) {
+                ctx.fillRect(corner.cx - hs / 2, corner.cy - hs / 2, hs, hs);
+                ctx.strokeRect(corner.cx - hs / 2, corner.cy - hs / 2, hs, hs);
+              }
+            }
+          }
+        }
+        // Pass 3: Draw Measure Tool
+        if (
+          measureState.step > 0 &&
+          measureState.startIdx !== null &&
+          measureState.endIdx !== null &&
+          globalBars &&
+          globalBars.length
+        ) {
+          let chronoStartIdx = Math.min(
+            measureState.startIdx,
+            measureState.endIdx,
+          );
+          let chronoEndIdx = Math.max(
+            measureState.startIdx,
+            measureState.endIdx,
+          );
+          chronoStartIdx = Math.max(
+            0,
+            Math.min(globalBars.length - 1, chronoStartIdx),
+          );
+          chronoEndIdx = Math.max(
+            0,
+            Math.min(globalBars.length - 1, chronoEndIdx),
+          );
+
+          let entryBar = globalBars[chronoStartIdx];
+          let exitBar = globalBars[chronoEndIdx];
+          let side = exitBar.close >= entryBar.close ? "LONG" : "SHORT";
+
+          let entryPrice = entryBar.close;
+          let exitPrice = exitBar.close;
+
+          let margin = 100;
+          let leverage = 20;
+          let maxPnl = 0;
+          let pnl = 0;
+
+          if (side === "LONG") {
+            pnl = margin * leverage * ((exitPrice - entryPrice) / entryPrice);
+            let highest = -Infinity;
+            for (let i = chronoStartIdx; i <= chronoEndIdx; i++)
+              highest = Math.max(highest, globalBars[i].high);
+            maxPnl = margin * leverage * ((highest - entryPrice) / entryPrice);
+          } else {
+            pnl = margin * leverage * ((entryPrice - exitPrice) / entryPrice);
+            let lowest = Infinity;
+            for (let i = chronoStartIdx; i <= chronoEndIdx; i++)
+              lowest = Math.min(lowest, globalBars[i].low);
+            maxPnl = margin * leverage * ((entryPrice - lowest) / entryPrice);
+          }
+
+          let barsCount = chronoEndIdx - chronoStartIdx;
+          let timeDiffSec = exitBar.time - entryBar.time;
+          let days = Math.floor(timeDiffSec / 86400);
+          let hours = Math.floor((timeDiffSec % 86400) / 3600);
+          let mins = Math.floor((timeDiffSec % 3600) / 60);
+          let timeStr = "";
+          if (days > 0) timeStr += days + "d ";
+          if (hours > 0) timeStr += hours + "h ";
+          timeStr += mins + "m";
+
+          let x1 = timeScale.logicalToCoordinate(chronoStartIdx);
+          let x2 = timeScale.logicalToCoordinate(chronoEndIdx);
+          let y1 = candleSeries.priceToCoordinate(entryPrice);
+          let y2 = candleSeries.priceToCoordinate(exitPrice);
+
+          if (x1 !== null && x2 !== null && y1 !== null && y2 !== null) {
+            ctx.save();
+
+            let fillCol =
+              side === "LONG"
+                ? "rgba(0, 230, 118, 0.2)"
+                : "rgba(255, 82, 82, 0.2)";
+            let strokeCol =
+              side === "LONG"
+                ? "rgba(0, 230, 118, 0.8)"
+                : "rgba(255, 82, 82, 0.8)";
+
+            ctx.fillStyle = fillCol;
+            let rectX = Math.min(x1, x2);
+            let rectW = Math.abs(x2 - x1);
+            if (rectW < 1) rectW = 1; // Ensure visible line even if 0 bars
+            let rectY = Math.min(y1, y2);
+            let rectH = Math.abs(y2 - y1);
+
+            ctx.fillRect(rectX, rectY, rectW, rectH);
+            ctx.strokeStyle = strokeCol;
+            ctx.lineWidth = 1;
+            ctx.strokeRect(rectX, rectY, rectW, rectH);
+
+            // Box position logic
+            let boxWidth = 200;
+            let boxHeight = 165;
+            let boxX = Math.max(x1, x2) + 15;
+            let boxY = y2 - boxHeight / 2;
+            if (boxX + boxWidth > canvas.width) {
+              boxX = Math.min(x1, x2) - boxWidth - 15;
+            }
+            if (boxY < 10) boxY = 10;
+            if (boxY + boxHeight > canvas.height - 10)
+              boxY = canvas.height - boxHeight - 10;
+
+            ctx.fillStyle = "rgba(17, 17, 24, 0.95)";
+            ctx.shadowColor = "rgba(0,0,0,0.5)";
+            ctx.shadowBlur = 10;
+            if (ctx.roundRect) {
+              ctx.beginPath();
+              ctx.roundRect(boxX, boxY, boxWidth, boxHeight, 8);
+              ctx.fill();
+              ctx.shadowBlur = 0;
+              ctx.strokeStyle = "#1f2933";
+              ctx.stroke();
+            } else {
+              ctx.fillRect(boxX, boxY, boxWidth, boxHeight);
+              ctx.shadowBlur = 0;
+              ctx.strokeStyle = "#1f2933";
+              ctx.strokeRect(boxX, boxY, boxWidth, boxHeight);
+            }
+
+            ctx.fillStyle = "#C3C6CE";
+            ctx.font =
+              '13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+            ctx.textAlign = "left";
+            ctx.textBaseline = "top";
+            let textX = boxX + 12;
+            let textY = boxY + 12;
+            let lineH = 20;
+
+            ctx.fillStyle = side === "LONG" ? "#00E676" : "#FF5252";
+            ctx.fillText(`Side: ${side} (100u x20)`, textX, textY);
+            textY += lineH;
+            ctx.fillStyle = "#C3C6CE";
+            ctx.fillText(`Entry: ${entryPrice.toFixed(4)}`, textX, textY);
+            textY += lineH;
+            ctx.fillText(`Exit:  ${exitPrice.toFixed(4)}`, textX, textY);
+            textY += lineH;
+
+            let maxRoe = (maxPnl / margin) * 100;
+            let roe = (pnl / margin) * 100;
+
+            ctx.fillStyle = maxPnl >= 0 ? "#00E676" : "#FF5252";
+            ctx.fillText(
+              `Max PnL: ${maxPnl > 0 ? "+" : ""}${maxPnl.toFixed(2)} USDT (${maxRoe > 0 ? "+" : ""}${maxRoe.toFixed(2)}%)`,
+              textX,
+              textY,
+            );
+            textY += lineH;
+
+            ctx.fillStyle = pnl >= 0 ? "#00E676" : "#FF5252";
+            ctx.fillText(
+              `PnL: ${pnl > 0 ? "+" : ""}${pnl.toFixed(2)} USDT (${roe > 0 ? "+" : ""}${roe.toFixed(2)}%)`,
+              textX,
+              textY,
+            );
+            textY += lineH;
+
+            ctx.fillStyle = "#C3C6CE";
+            ctx.fillText(`Time: ${timeStr}`, textX, textY);
+            textY += lineH;
+            ctx.fillText(`Bars: ${barsCount}`, textX, textY);
+
+            ctx.restore();
+          }
+        }
+      }
+
+      function setupMeasureTool() {
+        const wrapper = document.getElementById("chart-wrapper");
+        const statusText = document.getElementById("status");
+
+        // State for rectangle interaction
+        let hoveredRectIndex = -1;
+        let hoveredCorner = ""; // 'nw', 'ne', 'sw', 'se'
+
+        function updateStatus() {
+          if (measureState.modeActive) {
+            if (measureState.step === 0)
+              statusText.innerText = "PnL Mode: Active (Select Entry Point)";
+            else if (measureState.step === 1)
+              statusText.innerText = "PnL Mode: Active (Select Exit Point)";
+            else
+              statusText.innerText =
+                "PnL Mode: Completed. Right-click or Shift to restart.";
+          } else {
+            statusText.innerText = `Data Loaded: ${globalBars.length} bars. Ready.`;
+          }
+        }
+
+        // Activate mode on Shift
+        window.addEventListener("keydown", (e) => {
+          if (
+            e.key === "Shift" ||
+            e.key === "ShiftLeft" ||
+            e.key === "ShiftRight"
+          ) {
+            if (!measureState.modeActive) {
+              measureState.modeActive = true;
+              measureState.step = 0;
+              measureState.startIdx = null;
+              measureState.endIdx = null;
+              wrapper.style.cursor = "crosshair";
+              updateStatus();
+              requestAnimationFrame(drawOverlay);
+            }
+          }
+          if (e.key === "Escape") {
+            measureState.modeActive = false;
+            measureState.step = 0;
+            measureState.startIdx = null;
+            measureState.endIdx = null;
+            wrapper.style.cursor = "default";
+            updateStatus();
+            requestAnimationFrame(drawOverlay);
+          }
+        });
+
+        // Activate mode on Right click
+        wrapper.addEventListener(
+          "contextmenu",
+          (e) => {
+            e.preventDefault();
+            measureState.modeActive = true;
+            measureState.step = 0;
+            measureState.startIdx = null;
+            measureState.endIdx = null;
+            wrapper.style.cursor = "crosshair";
+            updateStatus();
+            requestAnimationFrame(drawOverlay);
+          },
+          true,
+        );
+
+        wrapper.addEventListener("pointerdown", (e) => {
+          if (e.button === 0) {
+            // Left click
+            if (measureState.modeActive) {
+              if (measureState.step === 0 && lastCrosshairLogical !== null) {
+                measureState.startIdx = Math.round(lastCrosshairLogical);
+                measureState.endIdx = measureState.startIdx;
+                measureState.step = 1;
+                updateStatus();
+                requestAnimationFrame(drawOverlay);
+              } else if (
+                measureState.step === 1 &&
+                lastCrosshairLogical !== null
+              ) {
+                measureState.endIdx = Math.round(lastCrosshairLogical);
+                measureState.step = 2; // Locked
+                wrapper.style.cursor = "default";
+                updateStatus();
+                requestAnimationFrame(drawOverlay);
+              } else if (measureState.step === 2) {
+                // Clear and reset if click again after lock (optional, user can also right click to restart)
+                measureState.modeActive = false;
+                measureState.step = 0;
+                measureState.startIdx = null;
+                measureState.endIdx = null;
+                updateStatus();
+                requestAnimationFrame(drawOverlay);
+              }
+            } else {
+              if (measureState.step === 2) {
+                measureState.step = 0;
+                measureState.startIdx = null;
+                measureState.endIdx = null;
+                requestAnimationFrame(drawOverlay);
+              }
+
+              if (!measureState.modeActive && lastCrosshairLogical !== null) {
+                let price = candleSeries.coordinateToPrice(
+                  e.clientY - wrapper.getBoundingClientRect().top,
+                );
+                if (price !== null) {
+                  if (drawingModeActive) {
+                    rectCreateState.active = true;
+                    rectCreateState.logical1 = lastCrosshairLogical;
+                    rectCreateState.price1 = price;
+                    rectCreateState.logical2 = lastCrosshairLogical;
+                    rectCreateState.price2 = price;
+                  } else if (drawingVPModeActive) {
+                    // VP Create Mode
+                    vpCreateState.active = true;
+                    vpCreateState.logical1 = lastCrosshairLogical;
+                    vpCreateState.logical2 = lastCrosshairLogical;
+                  } else {
+                    // Drag/Select existing tool
+                    if (hoveredRectIndex !== -1) {
+                      chart.applyOptions({ handleScroll: false });
+                      let r = drawnRects[hoveredRectIndex];
+                      selectedRectIndex = hoveredRectIndex;
+                      selectedVpIndex = -1;
+                      rectDragState.active = true;
+                      rectDragState.isVp = false;
+                      rectDragState.mode = hoveredCorner || "move";
+                      rectDragState.index = hoveredRectIndex;
+                      rectDragState.startLogical = lastCrosshairLogical;
+                      rectDragState.startPrice = price;
+                      rectDragState.originalLogical1 = r.l1;
+                      rectDragState.originalLogical2 = r.l2;
+                      rectDragState.originalPrice1 = r.p1;
+                      rectDragState.originalPrice2 = r.p2;
+                      requestAnimationFrame(drawOverlay);
+                    } else if (hoveredVpIndex !== -1) {
+                      chart.applyOptions({ handleScroll: false });
+                      let v = drawnVpRects[hoveredVpIndex];
+                      selectedVpIndex = hoveredVpIndex;
+                      selectedRectIndex = -1;
+                      rectDragState.active = true;
+                      rectDragState.isVp = true;
+                      rectDragState.mode = hoveredCorner || "move";
+                      rectDragState.index = hoveredVpIndex;
+                      rectDragState.startLogical = lastCrosshairLogical;
+                      rectDragState.originalLogical1 = v.l1;
+                      rectDragState.originalLogical2 = v.l2;
+                      requestAnimationFrame(drawOverlay);
+                    } else {
+                      if (selectedRectIndex !== -1 || selectedVpIndex !== -1) {
+                        selectedRectIndex = -1;
+                        selectedVpIndex = -1;
+                        requestAnimationFrame(drawOverlay);
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        });
+
+        wrapper.addEventListener(
+          "pointermove",
+          (e) => {
+            let rectBounds = wrapper.getBoundingClientRect();
+            let mouseX = e.clientX - rectBounds.left;
+            let mouseY = e.clientY - rectBounds.top;
+            let logical = chart.timeScale().coordinateToLogical(mouseX);
+            let price = candleSeries.coordinateToPrice(mouseY);
+
+            if (
+              !measureState.modeActive &&
+              !drawingModeActive &&
+              !drawingVPModeActive &&
+              logical !== null &&
+              price !== null &&
+              !rectDragState.active
+            ) {
+              hoveredRectIndex = -1;
+              hoveredVpIndex = -1;
+              hoveredCorner = "";
+              let handleRangeL = 2;
+              let priceRange = Math.abs(
+                candleSeries.coordinateToPrice(mouseY) -
+                  candleSeries.coordinateToPrice(mouseY - 8),
+              );
+
+              // Check Normal Rects
+              for (let i = drawnRects.length - 1; i >= 0; i--) {
+                let r = drawnRects[i];
+                let minL = Math.min(r.l1, r.l2),
+                  maxL = Math.max(r.l1, r.l2);
+                let minP = Math.min(r.p1, r.p2),
+                  maxP = Math.max(r.p1, r.p2);
+
+                let onNW =
+                  Math.abs(logical - minL) <= handleRangeL &&
+                  Math.abs(price - maxP) <= priceRange;
+                let onSE =
+                  Math.abs(logical - maxL) <= handleRangeL &&
+                  Math.abs(price - minP) <= priceRange;
+                let onNE =
+                  Math.abs(logical - maxL) <= handleRangeL &&
+                  Math.abs(price - maxP) <= priceRange;
+                let onSW =
+                  Math.abs(logical - minL) <= handleRangeL &&
+                  Math.abs(price - minP) <= priceRange;
+
+                if (onNW) hoveredCorner = "nw";
+                else if (onNE) hoveredCorner = "ne";
+                else if (onSE) hoveredCorner = "se";
+                else if (onSW) hoveredCorner = "sw";
+
+                if (hoveredCorner) {
+                  hoveredRectIndex = i;
+                  wrapper.style.cursor =
+                    hoveredCorner === "nw" || hoveredCorner === "se"
+                      ? "nwse-resize"
+                      : "nesw-resize";
+                  break;
+                } else if (
+                  logical >= minL &&
+                  logical <= maxL &&
+                  price >= minP &&
+                  price <= maxP
+                ) {
+                  hoveredRectIndex = i;
+                  wrapper.style.cursor = "move";
+                  break;
+                }
+              }
+
+              // Check VP Rects if no normal rect hovered
+              if (hoveredRectIndex === -1) {
+                for (let i = drawnVpRects.length - 1; i >= 0; i--) {
+                  let v = drawnVpRects[i];
+                  let minL = Math.min(v.l1, v.l2),
+                    maxL = Math.max(v.l1, v.l2);
+                  let minP = Math.min(v.p1, v.p2),
+                    maxP = Math.max(v.p1, v.p2);
+
+                  let onLeft =
+                    Math.abs(logical - minL) <= handleRangeL &&
+                    price >= minP &&
+                    price <= maxP;
+                  let onRight =
+                    Math.abs(logical - maxL) <= handleRangeL &&
+                    price >= minP &&
+                    price <= maxP;
+
+                  if (onLeft) hoveredCorner = "w";
+                  else if (onRight) hoveredCorner = "e";
+
+                  if (hoveredCorner) {
+                    hoveredVpIndex = i;
+                    wrapper.style.cursor = "ew-resize";
+                    break;
+                  } else if (
+                    logical >= minL &&
+                    logical <= maxL &&
+                    price >= minP &&
+                    price <= maxP
+                  ) {
+                    hoveredVpIndex = i;
+                    wrapper.style.cursor = "move";
+                    break;
+                  }
+                }
+              }
+
+              if (hoveredRectIndex === -1 && hoveredVpIndex === -1)
+                wrapper.style.cursor = "default";
+              requestAnimationFrame(drawOverlay);
+            }
+
+            if (
+              drawingModeActive &&
+              rectCreateState.active &&
+              lastCrosshairLogical !== null &&
+              price !== null
+            ) {
+              rectCreateState.logical2 = lastCrosshairLogical;
+              rectCreateState.price2 = price;
+              requestAnimationFrame(drawOverlay);
+            } else if (
+              drawingVPModeActive &&
+              vpCreateState.active &&
+              lastCrosshairLogical !== null
+            ) {
+              vpCreateState.logical2 = lastCrosshairLogical;
+              requestAnimationFrame(drawOverlay);
+            } else if (
+              rectDragState.active &&
+              lastCrosshairLogical !== null &&
+              price !== null
+            ) {
+              let logicalDelta =
+                lastCrosshairLogical - rectDragState.startLogical;
+              let { originalLogical1: ol1, originalLogical2: ol2 } =
+                rectDragState;
+              let minL = Math.min(ol1, ol2),
+                maxL = Math.max(ol1, ol2);
+
+              if (rectDragState.isVp) {
+                let v = drawnVpRects[rectDragState.index];
+                if (rectDragState.mode === "move") {
+                  v.l1 = ol1 + logicalDelta;
+                  v.l2 = ol2 + logicalDelta;
+                } else if (rectDragState.mode === "w") {
+                  v.l1 = ol1 === minL ? ol1 + logicalDelta : ol1;
+                  v.l2 = ol2 === minL ? ol2 + logicalDelta : ol2;
+                } else if (rectDragState.mode === "e") {
+                  v.l1 = ol1 === maxL ? ol1 + logicalDelta : ol1;
+                  v.l2 = ol2 === maxL ? ol2 + logicalDelta : ol2;
+                }
+              } else {
+                let priceDelta = price - rectDragState.startPrice;
+                let rect = drawnRects[rectDragState.index];
+                let { originalPrice1: op1, originalPrice2: op2 } =
+                  rectDragState;
+                let minP = Math.min(op1, op2),
+                  maxP = Math.max(op1, op2);
+
+                if (rectDragState.mode === "move") {
+                  rect.l1 = ol1 + logicalDelta;
+                  rect.l2 = ol2 + logicalDelta;
+                  rect.p1 = op1 + priceDelta;
+                  rect.p2 = op2 + priceDelta;
+                } else if (rectDragState.mode === "nw") {
+                  rect.l1 = ol1 === minL ? ol1 + logicalDelta : ol1;
+                  rect.l2 = ol2 === minL ? ol2 + logicalDelta : ol2;
+                  rect.p1 = op1 === maxP ? op1 + priceDelta : op1;
+                  rect.p2 = op2 === maxP ? op2 + priceDelta : op2;
+                } else if (rectDragState.mode === "ne") {
+                  rect.l1 = ol1 === maxL ? ol1 + logicalDelta : ol1;
+                  rect.l2 = ol2 === maxL ? ol2 + logicalDelta : ol2;
+                  rect.p1 = op1 === maxP ? op1 + priceDelta : op1;
+                  rect.p2 = op2 === maxP ? op2 + priceDelta : op2;
+                } else if (rectDragState.mode === "sw") {
+                  rect.l1 = ol1 === minL ? ol1 + logicalDelta : ol1;
+                  rect.l2 = ol2 === minL ? ol2 + logicalDelta : ol2;
+                  rect.p1 = op1 === minP ? op1 + priceDelta : op1;
+                  rect.p2 = op2 === minP ? op2 + priceDelta : op2;
+                } else if (rectDragState.mode === "se") {
+                  rect.l1 = ol1 === maxL ? ol1 + logicalDelta : ol1;
+                  rect.l2 = ol2 === maxL ? ol2 + logicalDelta : ol2;
+                  rect.p1 = op1 === minP ? op1 + priceDelta : op1;
+                  rect.p2 = op2 === minP ? op2 + priceDelta : op2;
+                }
+              }
+
+              requestAnimationFrame(drawOverlay);
+            }
+          },
+          true,
+        );
+
+        window.addEventListener("keydown", (e) => {
+          if (
+            (e.key === "Delete" || e.key === "Backspace") &&
+            !rectCreateState.active &&
+            !vpCreateState.active
+          ) {
+            if (selectedRectIndex !== -1) {
+              drawnRects.splice(selectedRectIndex, 1);
+              selectedRectIndex = -1;
+              hoveredRectIndex = -1;
+              wrapper.style.cursor = "default";
+              localStorage.setItem(
+                "stat1_drawnRects",
+                JSON.stringify(drawnRects),
+              );
+              requestAnimationFrame(drawOverlay);
+            } else if (selectedVpIndex !== -1) {
+              drawnVpRects.splice(selectedVpIndex, 1);
+              selectedVpIndex = -1;
+              hoveredVpIndex = -1;
+              wrapper.style.cursor = "default";
+              localStorage.setItem(
+                "stat1_drawnVpRects",
+                JSON.stringify(drawnVpRects),
+              );
+              requestAnimationFrame(drawOverlay);
+            } else if (hoveredRectIndex !== -1) {
+              drawnRects.splice(hoveredRectIndex, 1);
+              hoveredRectIndex = -1;
+              wrapper.style.cursor = "default";
+              localStorage.setItem(
+                "stat1_drawnRects",
+                JSON.stringify(drawnRects),
+              );
+              requestAnimationFrame(drawOverlay);
+            } else if (hoveredVpIndex !== -1) {
+              drawnVpRects.splice(hoveredVpIndex, 1);
+              hoveredVpIndex = -1;
+              wrapper.style.cursor = "default";
+              localStorage.setItem(
+                "stat1_drawnVpRects",
+                JSON.stringify(drawnVpRects),
+              );
+              requestAnimationFrame(drawOverlay);
+            }
+          }
+        });
+
+        window.addEventListener(
+          "pointerup",
+          (e) => {
+            if (rectCreateState.active) {
+              rectCreateState.active = false;
+              if (
+                Math.abs(rectCreateState.logical1 - rectCreateState.logical2) >
+                  0.01 &&
+                Math.abs(rectCreateState.price1 - rectCreateState.price2) > 0
+              ) {
+                drawnRects.push({
+                  l1: rectCreateState.logical1,
+                  p1: rectCreateState.price1,
+                  l2: rectCreateState.logical2,
+                  p2: rectCreateState.price2,
+                });
+                localStorage.setItem(
+                  "stat1_drawnRects",
+                  JSON.stringify(drawnRects),
+                );
+              }
+              rectCreateState.logical1 = null;
+              rectCreateState.price1 = null;
+              rectCreateState.logical2 = null;
+              rectCreateState.price2 = null;
+
+              drawingModeActive = false;
+              document.getElementById("toggle-draw-rect").checked = false;
+              chart.applyOptions({ handleScroll: true });
+              requestAnimationFrame(drawOverlay);
+            }
+
+            if (vpCreateState.active) {
+              vpCreateState.active = false;
+              if (
+                Math.abs(vpCreateState.logical1 - vpCreateState.logical2) > 0.01
+              ) {
+                drawnVpRects.push({
+                  l1: vpCreateState.logical1,
+                  l2: vpCreateState.logical2,
+                });
+                localStorage.setItem(
+                  "stat1_drawnVpRects",
+                  JSON.stringify(drawnVpRects),
+                );
+              }
+              vpCreateState.logical1 = null;
+              vpCreateState.logical2 = null;
+
+              drawingVPModeActive = false;
+              document.getElementById("toggle-draw-vp").checked = false;
+              chart.applyOptions({ handleScroll: true });
+              requestAnimationFrame(drawOverlay);
+            }
+
+            if (rectDragState.active) {
+              rectDragState.active = false;
+              if (rectDragState.isVp)
+                localStorage.setItem(
+                  "stat1_drawnVpRects",
+                  JSON.stringify(drawnVpRects),
+                );
+              else
+                localStorage.setItem(
+                  "stat1_drawnRects",
+                  JSON.stringify(drawnRects),
+                );
+
+              chart.applyOptions({
+                handleScroll: {
+                  mouseWheel: true,
+                  pressedMouseMove: true,
+                  horzTouchDrag: true,
+                  vertTouchDrag: true,
+                },
+              });
+              requestAnimationFrame(drawOverlay);
+            }
+          },
+          true,
+        );
+
+        // Add simple delete on right click when over a rect
+        wrapper.addEventListener("contextmenu", (e) => {
+          if (measureState.modeActive || e.shiftKey) return; // Prioritize measure mode if active or shifted
+
+          if (lastCrosshairLogical !== null) {
+            let price = candleSeries.coordinateToPrice(
+              e.clientY - wrapper.getBoundingClientRect().top,
+            );
+            if (price !== null) {
+              for (let i = drawnRects.length - 1; i >= 0; i--) {
+                let r = drawnRects[i];
+                let minL = Math.min(r.l1, r.l2),
+                  maxL = Math.max(r.l1, r.l2);
+                let minP = Math.min(r.p1, r.p2),
+                  maxP = Math.max(r.p1, r.p2);
+                if (
+                  lastCrosshairLogical >= minL &&
+                  lastCrosshairLogical <= maxL &&
+                  price >= minP &&
+                  price <= maxP
+                ) {
+                  e.preventDefault(); // Stop normal measure mode from right click
+                  drawnRects.splice(i, 1);
+                  if (selectedRectIndex === i) selectedRectIndex = -1;
+                  else if (selectedRectIndex > i) selectedRectIndex--;
+                  localStorage.setItem(
+                    "stat1_drawnRects",
+                    JSON.stringify(drawnRects),
+                  );
+                  requestAnimationFrame(drawOverlay);
+                  return;
+                }
+              }
+            }
+          }
+        });
+
+        chart.subscribeCrosshairMove((param) => {
+          if (param.logical !== undefined && param.logical !== null) {
+            lastCrosshairLogical = param.logical;
+            if (measureState.modeActive && measureState.step === 1) {
+              measureState.endIdx = Math.round(param.logical);
+              requestAnimationFrame(drawOverlay);
+            }
+          } else {
+            lastCrosshairLogical = null;
+          }
+        });
+      }
+
+      function setupToggles() {
+        const tAtr1 = document.getElementById("toggle-atr1");
+        const tAtr2 = document.getElementById("toggle-atr2");
+        const tVsr = document.getElementById("toggle-vsr");
+        const tVpVol = document.getElementById("toggle-vpvol");
+        const tVwap = document.getElementById("toggle-vwap");
+        const tDrawVP = document.getElementById("toggle-draw-vp");
+        const tDrawRect = document.getElementById("toggle-draw-rect");
+
+        tAtr1.checked = showATR1;
+        tAtr2.checked = showATR2;
+        tVsr.checked = showVSR;
+        tVpVol.checked = showVPVol;
+        tVwap.checked = showVWAP;
+        tDrawVP.checked = drawingVPModeActive;
+        tDrawRect.checked = drawingModeActive;
+
+        tAtr1.addEventListener("change", (e) => {
+          showATR1 = e.target.checked;
+          localStorage.setItem("stat1_showATR1", showATR1 ? "1" : "0");
+          requestAnimationFrame(drawOverlay);
+        });
+        tAtr2.addEventListener("change", (e) => {
+          showATR2 = e.target.checked;
+          localStorage.setItem("stat1_showATR2", showATR2 ? "1" : "0");
+          t1Series2.applyOptions({ visible: showATR2 });
+          t2Series2.applyOptions({ visible: showATR2 });
+        });
+        tVsr.addEventListener("change", (e) => {
+          showVSR = e.target.checked;
+          localStorage.setItem("stat1_showVSR", showVSR ? "1" : "0");
+          requestAnimationFrame(drawOverlay);
+        });
+        tVpVol.addEventListener("change", (e) => {
+          showVPVol = e.target.checked;
+          localStorage.setItem("stat1_showVPVol", showVPVol ? "1" : "0");
+          requestAnimationFrame(drawOverlay);
+        });
+        tVwap.addEventListener("change", (e) => {
+          showVWAP = e.target.checked;
+          localStorage.setItem("stat1_showVWAP", showVWAP ? "1" : "0");
+          vwapSeries.applyOptions({ visible: showVWAP });
+        });
+
+        tDrawVP.addEventListener("change", (e) => {
+          drawingVPModeActive = e.target.checked;
+          if (drawingVPModeActive && drawingModeActive) {
+            drawingModeActive = false;
+            tDrawRect.checked = false;
+          }
+          chart.applyOptions({ handleScroll: !drawingVPModeActive });
+        });
+
+        tDrawRect.addEventListener("change", (e) => {
+          drawingModeActive = e.target.checked;
+          if (drawingModeActive && drawingVPModeActive) {
+            drawingVPModeActive = false;
+            tDrawVP.checked = false;
+          }
+          chart.applyOptions({ handleScroll: !drawingModeActive }); // Disable chart pan when drawing
+        });
+      }
+
+      async function run() {
+        initChart();
+        setupToggles();
+        const bars = await fetchBinanceData();
+
+        if (bars.length === 0) {
+          document.getElementById("status").innerText = "Failed to load data.";
+          return;
+        }
+
+        candleSeries.setData(bars);
+        globalBars = bars;
+
+        // Calculate BVC algorithm first for the entire history
+        calculateBVCVolumes(bars, 20);
+
+        // Calculate standard Session VWAP
+        const vwapData = calculateStandardVWAP(globalBars);
+        vwapSeries.setData(vwapData);
+
+        // Calculate indicators
+        // ATRBot 1 (Original with fill)
+        const bot1 = calculateATRBot(bars, ATR_LENGTH, EMA_LENGTH, ATR_MULT);
+        globalCycles = bot1.cycles;
+
+        // ATRBot 2 (New with no fill, visible lines)
+        const bot2 = calculateATRBot(bars, 10, 14, 1.0);
+
+        globalVsrZones = calculateVSR(bars, VSR_LENGTH, VSR_THRESHOLD);
+
+        t1Series.setData(bot1.t1Data);
+        t2Series.setData(bot1.t2Data);
+        t1Series2.setData(bot2.t1Data);
+        t2Series2.setData(bot2.t2Data);
+
+        document.getElementById("status").innerText =
+          `Data Loaded: ${bars.length} bars. Ready.`;
+
+        // Initial setup for canvas
+        setTimeout(() => syncCanvasSize(), 500);
+
+        setupMeasureTool();
+      }
+
+      run();
+    </script>
+  </body>
+</html>
