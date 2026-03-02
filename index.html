@@ -2846,532 +2846,287 @@
       }
     }
 
+    // Helper: convert pointer event position to chart coordinates
+    function ptrToChart(e) {
+      const wrapper = document.getElementById("chart-wrapper");
+      const b = wrapper.getBoundingClientRect();
+      const x = e.clientX - b.left;
+      const y = e.clientY - b.top;
+      const logical = chart.timeScale().coordinateToLogical(x);
+      const price = candleSeries.coordinateToPrice(y);
+      return { x, y, logical, price };
+    }
+
     function setupMeasureTool() {
       const wrapper = document.getElementById("chart-wrapper");
-      const statusText = document.getElementById("status");
 
-      // State for rectangle interaction
-      let hoveredRectIndex = -1;
-      let hoveredCorner = ""; // 'nw', 'ne', 'sw', 'se'
+      // Is this likely a touch/pen device?
+      const isTouch = () => window.matchMedia("(pointer: coarse)").matches;
+      // Touch slop: larger hit area on touch
+      const handleSlop = () => isTouch() ? 28 : 10;
 
-      function updateStatus() {
-        if (measureState.modeActive) {
-          if (measureState.step === 0)
-            statusText.innerText = "PnL Mode: Active (Select Entry Point)";
-          else if (measureState.step === 1)
-            statusText.innerText = "PnL Mode: Active (Select Exit Point)";
-          else
-            statusText.innerText =
-              "PnL Mode: Completed. Right-click or Shift to restart.";
-        } else {
-          statusText.innerText = `Data Loaded: ${globalBars.length} bars. Ready.`;
+      // ─── Pointer state ────────────────────────────────────────────────
+      let activePointerId = null;  // We only track one pointer at a time
+
+      // ─── Hit test ────────────────────────────────────────────────────
+      function hitTestRects(logical, price) {
+        const slop = handleSlop();
+        const priceSlop = Math.abs(
+          candleSeries.coordinateToPrice(0) - candleSeries.coordinateToPrice(slop)
+        ) || 0.0001;
+
+        for (let i = drawnRects.length - 1; i >= 0; i--) {
+          const r = drawnRects[i];
+          const minL = Math.min(r.l1, r.l2), maxL = Math.max(r.l1, r.l2);
+          const minP = Math.min(r.p1, r.p2), maxP = Math.max(r.p1, r.p2);
+
+          // corners (resize handles)
+          if (Math.abs(logical - minL) <= slop / 4 && Math.abs(price - maxP) <= priceSlop) return { type: 'rect', idx: i, corner: 'nw' };
+          if (Math.abs(logical - maxL) <= slop / 4 && Math.abs(price - maxP) <= priceSlop) return { type: 'rect', idx: i, corner: 'ne' };
+          if (Math.abs(logical - minL) <= slop / 4 && Math.abs(price - minP) <= priceSlop) return { type: 'rect', idx: i, corner: 'sw' };
+          if (Math.abs(logical - maxL) <= slop / 4 && Math.abs(price - minP) <= priceSlop) return { type: 'rect', idx: i, corner: 'se' };
+          // interior
+          if (logical >= minL && logical <= maxL && price >= minP && price <= maxP)
+            return { type: 'rect', idx: i, corner: 'move' };
         }
+        for (let i = drawnVpRects.length - 1; i >= 0; i--) {
+          const v = drawnVpRects[i];
+          const minL = Math.min(v.l1, v.l2), maxL = Math.max(v.l1, v.l2);
+          if (Math.abs(logical - minL) <= slop / 4) return { type: 'vp', idx: i, corner: 'w' };
+          if (Math.abs(logical - maxL) <= slop / 4) return { type: 'vp', idx: i, corner: 'e' };
+          if (logical >= minL && logical <= maxL) return { type: 'vp', idx: i, corner: 'move' };
+        }
+        return null;
       }
 
-      // Activate mode on Shift
-      window.addEventListener("keydown", (e) => {
-        if (
-          e.key === "Shift" ||
-          e.key === "ShiftLeft" ||
-          e.key === "ShiftRight"
-        ) {
-          if (!measureState.modeActive) {
-            measureState.modeActive = true;
-            measureState.step = 0;
-            measureState.startIdx = null;
-            measureState.endIdx = null;
-            wrapper.style.cursor = "crosshair";
-            updateStatus();
-            requestAnimationFrame(drawOverlay);
-          }
-        }
-        if (e.key === "Escape") {
-          measureState.modeActive = false;
-          measureState.step = 0;
-          measureState.startIdx = null;
-          measureState.endIdx = null;
-          wrapper.style.cursor = "default";
-          updateStatus();
-          requestAnimationFrame(drawOverlay);
-        }
-      });
-
-      // Activate mode on Right click
-      wrapper.addEventListener(
-        "contextmenu",
-        (e) => {
-          e.preventDefault();
-          measureState.modeActive = true;
-          measureState.step = 0;
-          measureState.startIdx = null;
-          measureState.endIdx = null;
-          wrapper.style.cursor = "crosshair";
-          updateStatus();
-          requestAnimationFrame(drawOverlay);
-        },
-        true,
-      );
-
+      // ─── Pointer DOWN ────────────────────────────────────────────────
       wrapper.addEventListener("pointerdown", (e) => {
-        if (e.button === 0) {
-          // Left click
-          if (measureState.modeActive) {
-            if (measureState.step === 0 && lastCrosshairLogical !== null) {
-              measureState.startIdx = Math.round(lastCrosshairLogical);
-              measureState.endIdx = measureState.startIdx;
-              measureState.step = 1;
-              updateStatus();
-              requestAnimationFrame(drawOverlay);
-            } else if (
-              measureState.step === 1 &&
-              lastCrosshairLogical !== null
-            ) {
-              measureState.endIdx = Math.round(lastCrosshairLogical);
-              measureState.step = 2; // Locked
-              wrapper.style.cursor = "default";
-              updateStatus();
-              requestAnimationFrame(drawOverlay);
-            } else if (measureState.step === 2) {
-              // Clear and reset if click again after lock (optional, user can also right click to restart)
-              measureState.modeActive = false;
-              measureState.step = 0;
-              measureState.startIdx = null;
-              measureState.endIdx = null;
-              updateStatus();
-              requestAnimationFrame(drawOverlay);
-            }
+        // Only primary pointer (ignore multi-touch)
+        if (!e.isPrimary) return;
+        if (e.button !== 0 && e.pointerType === "mouse") return;
+
+        activePointerId = e.pointerId;
+        wrapper.setPointerCapture(e.pointerId); // keeps events even if finger slides off
+
+        const { logical, price } = ptrToChart(e);
+        if (logical === null || price === null) return;
+
+        // ─ Measure mode ─
+        if (measureState.modeActive) {
+          if (measureState.step === 0) {
+            measureState.startIdx = Math.round(logical);
+            measureState.endIdx = measureState.startIdx;
+            measureState.step = 1;
+          } else if (measureState.step === 1) {
+            measureState.endIdx = Math.round(logical);
+            measureState.step = 2;
+            wrapper.style.cursor = "default";
+          } else if (measureState.step === 2) {
+            setDrawMode("cursor");
+          }
+          requestAnimationFrame(drawOverlay);
+          return;
+        }
+
+        // ─ Draw Rect mode ─
+        if (drawingModeActive) {
+          rectCreateState.active = true;
+          rectCreateState.logical1 = logical;
+          rectCreateState.price1 = price;
+          rectCreateState.logical2 = logical;
+          rectCreateState.price2 = price;
+          requestAnimationFrame(drawOverlay);
+          return;
+        }
+
+        // ─ Draw VP mode ─
+        if (drawingVPModeActive) {
+          vpCreateState.active = true;
+          vpCreateState.logical1 = logical;
+          vpCreateState.logical2 = logical;
+          requestAnimationFrame(drawOverlay);
+          return;
+        }
+
+        // ─ Select / Drag existing ─
+        const hit = hitTestRects(logical, price);
+        if (hit) {
+          chart.applyOptions({ handleScroll: false });
+          if (hit.type === 'rect') {
+            selectedRectIndex = hit.idx; selectedVpIndex = -1;
+            const r = drawnRects[hit.idx];
+            rectDragState.active = true; rectDragState.isVp = false;
+            rectDragState.mode = hit.corner; rectDragState.index = hit.idx;
+            rectDragState.startLogical = logical; rectDragState.startPrice = price;
+            rectDragState.originalLogical1 = r.l1; rectDragState.originalLogical2 = r.l2;
+            rectDragState.originalPrice1 = r.p1; rectDragState.originalPrice2 = r.p2;
           } else {
-            if (measureState.step === 2) {
-              measureState.step = 0;
-              measureState.startIdx = null;
-              measureState.endIdx = null;
-              requestAnimationFrame(drawOverlay);
-            }
-
-            if (!measureState.modeActive && lastCrosshairLogical !== null) {
-              let price = candleSeries.coordinateToPrice(
-                e.clientY - wrapper.getBoundingClientRect().top,
-              );
-              if (price !== null) {
-                if (drawingModeActive) {
-                  rectCreateState.active = true;
-                  rectCreateState.logical1 = lastCrosshairLogical;
-                  rectCreateState.price1 = price;
-                  rectCreateState.logical2 = lastCrosshairLogical;
-                  rectCreateState.price2 = price;
-                } else if (drawingVPModeActive) {
-                  // VP Create Mode
-                  vpCreateState.active = true;
-                  vpCreateState.logical1 = lastCrosshairLogical;
-                  vpCreateState.logical2 = lastCrosshairLogical;
-                } else {
-                  // Drag/Select existing tool
-                  if (hoveredRectIndex !== -1) {
-                    chart.applyOptions({ handleScroll: false });
-                    let r = drawnRects[hoveredRectIndex];
-                    selectedRectIndex = hoveredRectIndex;
-                    selectedVpIndex = -1;
-                    rectDragState.active = true;
-                    rectDragState.isVp = false;
-                    rectDragState.mode = hoveredCorner || "move";
-                    rectDragState.index = hoveredRectIndex;
-                    rectDragState.startLogical = lastCrosshairLogical;
-                    rectDragState.startPrice = price;
-                    rectDragState.originalLogical1 = r.l1;
-                    rectDragState.originalLogical2 = r.l2;
-                    rectDragState.originalPrice1 = r.p1;
-                    rectDragState.originalPrice2 = r.p2;
-                    requestAnimationFrame(drawOverlay);
-                  } else if (hoveredVpIndex !== -1) {
-                    chart.applyOptions({ handleScroll: false });
-                    let v = drawnVpRects[hoveredVpIndex];
-                    selectedVpIndex = hoveredVpIndex;
-                    selectedRectIndex = -1;
-                    rectDragState.active = true;
-                    rectDragState.isVp = true;
-                    rectDragState.mode = hoveredCorner || "move";
-                    rectDragState.index = hoveredVpIndex;
-                    rectDragState.startLogical = lastCrosshairLogical;
-                    rectDragState.originalLogical1 = v.l1;
-                    rectDragState.originalLogical2 = v.l2;
-                    requestAnimationFrame(drawOverlay);
-                  } else {
-                    if (selectedRectIndex !== -1 || selectedVpIndex !== -1) {
-                      selectedRectIndex = -1;
-                      selectedVpIndex = -1;
-                      requestAnimationFrame(drawOverlay);
-                    }
-                  }
-                }
-              }
-            }
+            selectedVpIndex = hit.idx; selectedRectIndex = -1;
+            const v = drawnVpRects[hit.idx];
+            rectDragState.active = true; rectDragState.isVp = true;
+            rectDragState.mode = hit.corner; rectDragState.index = hit.idx;
+            rectDragState.startLogical = logical;
+            rectDragState.originalLogical1 = v.l1; rectDragState.originalLogical2 = v.l2;
           }
-        }
-      });
-
-      wrapper.addEventListener(
-        "pointermove",
-        (e) => {
-          let rectBounds = wrapper.getBoundingClientRect();
-          let mouseX = e.clientX - rectBounds.left;
-          let mouseY = e.clientY - rectBounds.top;
-          let logical = chart.timeScale().coordinateToLogical(mouseX);
-          let price = candleSeries.coordinateToPrice(mouseY);
-
-          if (
-            !measureState.modeActive &&
-            !drawingModeActive &&
-            !drawingVPModeActive &&
-            logical !== null &&
-            price !== null &&
-            !rectDragState.active
-          ) {
-            hoveredRectIndex = -1;
-            hoveredVpIndex = -1;
-            hoveredCorner = "";
-            let handleRangeL = 2;
-            let priceRange = Math.abs(
-              candleSeries.coordinateToPrice(mouseY) -
-              candleSeries.coordinateToPrice(mouseY - 8),
-            );
-
-            // Check Normal Rects
-            for (let i = drawnRects.length - 1; i >= 0; i--) {
-              let r = drawnRects[i];
-              let minL = Math.min(r.l1, r.l2),
-                maxL = Math.max(r.l1, r.l2);
-              let minP = Math.min(r.p1, r.p2),
-                maxP = Math.max(r.p1, r.p2);
-
-              let onNW =
-                Math.abs(logical - minL) <= handleRangeL &&
-                Math.abs(price - maxP) <= priceRange;
-              let onSE =
-                Math.abs(logical - maxL) <= handleRangeL &&
-                Math.abs(price - minP) <= priceRange;
-              let onNE =
-                Math.abs(logical - maxL) <= handleRangeL &&
-                Math.abs(price - maxP) <= priceRange;
-              let onSW =
-                Math.abs(logical - minL) <= handleRangeL &&
-                Math.abs(price - minP) <= priceRange;
-
-              if (onNW) hoveredCorner = "nw";
-              else if (onNE) hoveredCorner = "ne";
-              else if (onSE) hoveredCorner = "se";
-              else if (onSW) hoveredCorner = "sw";
-
-              if (hoveredCorner) {
-                hoveredRectIndex = i;
-                wrapper.style.cursor =
-                  hoveredCorner === "nw" || hoveredCorner === "se"
-                    ? "nwse-resize"
-                    : "nesw-resize";
-                break;
-              } else if (
-                logical >= minL &&
-                logical <= maxL &&
-                price >= minP &&
-                price <= maxP
-              ) {
-                hoveredRectIndex = i;
-                wrapper.style.cursor = "move";
-                break;
-              }
-            }
-
-            // Check VP Rects if no normal rect hovered
-            if (hoveredRectIndex === -1) {
-              for (let i = drawnVpRects.length - 1; i >= 0; i--) {
-                let v = drawnVpRects[i];
-                let minL = Math.min(v.l1, v.l2),
-                  maxL = Math.max(v.l1, v.l2);
-                let minP = Math.min(v.p1, v.p2),
-                  maxP = Math.max(v.p1, v.p2);
-
-                let onLeft =
-                  Math.abs(logical - minL) <= handleRangeL &&
-                  price >= minP &&
-                  price <= maxP;
-                let onRight =
-                  Math.abs(logical - maxL) <= handleRangeL &&
-                  price >= minP &&
-                  price <= maxP;
-
-                if (onLeft) hoveredCorner = "w";
-                else if (onRight) hoveredCorner = "e";
-
-                if (hoveredCorner) {
-                  hoveredVpIndex = i;
-                  wrapper.style.cursor = "ew-resize";
-                  break;
-                } else if (
-                  logical >= minL &&
-                  logical <= maxL &&
-                  price >= minP &&
-                  price <= maxP
-                ) {
-                  hoveredVpIndex = i;
-                  wrapper.style.cursor = "move";
-                  break;
-                }
-              }
-            }
-
-            if (hoveredRectIndex === -1 && hoveredVpIndex === -1)
-              wrapper.style.cursor = "default";
-            requestAnimationFrame(drawOverlay);
-          }
-
-          if (
-            drawingModeActive &&
-            rectCreateState.active &&
-            lastCrosshairLogical !== null &&
-            price !== null
-          ) {
-            rectCreateState.logical2 = lastCrosshairLogical;
-            rectCreateState.price2 = price;
-            requestAnimationFrame(drawOverlay);
-          } else if (
-            drawingVPModeActive &&
-            vpCreateState.active &&
-            lastCrosshairLogical !== null
-          ) {
-            vpCreateState.logical2 = lastCrosshairLogical;
-            requestAnimationFrame(drawOverlay);
-          } else if (
-            rectDragState.active &&
-            lastCrosshairLogical !== null &&
-            price !== null
-          ) {
-            let logicalDelta =
-              lastCrosshairLogical - rectDragState.startLogical;
-            let { originalLogical1: ol1, originalLogical2: ol2 } =
-              rectDragState;
-            let minL = Math.min(ol1, ol2),
-              maxL = Math.max(ol1, ol2);
-
-            if (rectDragState.isVp) {
-              let v = drawnVpRects[rectDragState.index];
-              if (rectDragState.mode === "move") {
-                v.l1 = ol1 + logicalDelta;
-                v.l2 = ol2 + logicalDelta;
-              } else if (rectDragState.mode === "w") {
-                v.l1 = ol1 === minL ? ol1 + logicalDelta : ol1;
-                v.l2 = ol2 === minL ? ol2 + logicalDelta : ol2;
-              } else if (rectDragState.mode === "e") {
-                v.l1 = ol1 === maxL ? ol1 + logicalDelta : ol1;
-                v.l2 = ol2 === maxL ? ol2 + logicalDelta : ol2;
-              }
-            } else {
-              let priceDelta = price - rectDragState.startPrice;
-              let rect = drawnRects[rectDragState.index];
-              let { originalPrice1: op1, originalPrice2: op2 } =
-                rectDragState;
-              let minP = Math.min(op1, op2),
-                maxP = Math.max(op1, op2);
-
-              if (rectDragState.mode === "move") {
-                rect.l1 = ol1 + logicalDelta;
-                rect.l2 = ol2 + logicalDelta;
-                rect.p1 = op1 + priceDelta;
-                rect.p2 = op2 + priceDelta;
-              } else if (rectDragState.mode === "nw") {
-                rect.l1 = ol1 === minL ? ol1 + logicalDelta : ol1;
-                rect.l2 = ol2 === minL ? ol2 + logicalDelta : ol2;
-                rect.p1 = op1 === maxP ? op1 + priceDelta : op1;
-                rect.p2 = op2 === maxP ? op2 + priceDelta : op2;
-              } else if (rectDragState.mode === "ne") {
-                rect.l1 = ol1 === maxL ? ol1 + logicalDelta : ol1;
-                rect.l2 = ol2 === maxL ? ol2 + logicalDelta : ol2;
-                rect.p1 = op1 === maxP ? op1 + priceDelta : op1;
-                rect.p2 = op2 === maxP ? op2 + priceDelta : op2;
-              } else if (rectDragState.mode === "sw") {
-                rect.l1 = ol1 === minL ? ol1 + logicalDelta : ol1;
-                rect.l2 = ol2 === minL ? ol2 + logicalDelta : ol2;
-                rect.p1 = op1 === minP ? op1 + priceDelta : op1;
-                rect.p2 = op2 === minP ? op2 + priceDelta : op2;
-              } else if (rectDragState.mode === "se") {
-                rect.l1 = ol1 === maxL ? ol1 + logicalDelta : ol1;
-                rect.l2 = ol2 === maxL ? ol2 + logicalDelta : ol2;
-                rect.p1 = op1 === minP ? op1 + priceDelta : op1;
-                rect.p2 = op2 === minP ? op2 + priceDelta : op2;
-              }
-            }
-
-            requestAnimationFrame(drawOverlay);
-          }
-        },
-        true,
-      );
-
-      window.addEventListener("keydown", (e) => {
-        if (
-          (e.key === "Delete" || e.key === "Backspace") &&
-          !rectCreateState.active &&
-          !vpCreateState.active
-        ) {
-          if (selectedRectIndex !== -1) {
-            drawnRects.splice(selectedRectIndex, 1);
-            selectedRectIndex = -1;
-            hoveredRectIndex = -1;
-            wrapper.style.cursor = "default";
-            localStorage.setItem(
-              "stat1_drawnRects",
-              JSON.stringify(drawnRects),
-            );
-            requestAnimationFrame(drawOverlay);
-          } else if (selectedVpIndex !== -1) {
-            drawnVpRects.splice(selectedVpIndex, 1);
-            selectedVpIndex = -1;
-            hoveredVpIndex = -1;
-            wrapper.style.cursor = "default";
-            localStorage.setItem(
-              "stat1_drawnVpRects",
-              JSON.stringify(drawnVpRects),
-            );
-            requestAnimationFrame(drawOverlay);
-          } else if (hoveredRectIndex !== -1) {
-            drawnRects.splice(hoveredRectIndex, 1);
-            hoveredRectIndex = -1;
-            wrapper.style.cursor = "default";
-            localStorage.setItem(
-              "stat1_drawnRects",
-              JSON.stringify(drawnRects),
-            );
-            requestAnimationFrame(drawOverlay);
-          } else if (hoveredVpIndex !== -1) {
-            drawnVpRects.splice(hoveredVpIndex, 1);
-            hoveredVpIndex = -1;
-            wrapper.style.cursor = "default";
-            localStorage.setItem(
-              "stat1_drawnVpRects",
-              JSON.stringify(drawnVpRects),
-            );
+          requestAnimationFrame(drawOverlay);
+        } else {
+          // Deselect
+          if (selectedRectIndex !== -1 || selectedVpIndex !== -1) {
+            selectedRectIndex = -1; selectedVpIndex = -1;
             requestAnimationFrame(drawOverlay);
           }
         }
       });
 
-      window.addEventListener(
-        "pointerup",
-        (e) => {
-          if (rectCreateState.active) {
-            rectCreateState.active = false;
-            if (
-              Math.abs(rectCreateState.logical1 - rectCreateState.logical2) >
-              0.01 &&
-              Math.abs(rectCreateState.price1 - rectCreateState.price2) > 0
-            ) {
-              drawnRects.push({
-                l1: rectCreateState.logical1,
-                p1: rectCreateState.price1,
-                l2: rectCreateState.logical2,
-                p2: rectCreateState.price2,
-              });
-              localStorage.setItem(
-                "stat1_drawnRects",
-                JSON.stringify(drawnRects),
-              );
-            }
-            rectCreateState.logical1 = null;
-            rectCreateState.price1 = null;
-            rectCreateState.logical2 = null;
-            rectCreateState.price2 = null;
+      // ─── Pointer MOVE ────────────────────────────────────────────────
+      wrapper.addEventListener("pointermove", (e) => {
+        if (!e.isPrimary) return;
+        const { logical, price, x, y } = ptrToChart(e);
+        if (logical === null || price === null) return;
 
-            drawingModeActive = false;
-            document.getElementById("toggle-draw-rect").checked = false;
-            chart.applyOptions({ handleScroll: true });
-            requestAnimationFrame(drawOverlay);
+        // Update crosshair logical for measure tool preview
+        lastCrosshairLogical = logical;
+
+        // Drawing rect
+        if (drawingModeActive && rectCreateState.active) {
+          rectCreateState.logical2 = logical;
+          rectCreateState.price2 = price;
+          requestAnimationFrame(drawOverlay);
+          return;
+        }
+
+        // Drawing VP
+        if (drawingVPModeActive && vpCreateState.active) {
+          vpCreateState.logical2 = logical;
+          requestAnimationFrame(drawOverlay);
+          return;
+        }
+
+        // Measure step 1 preview
+        if (measureState.modeActive && measureState.step === 1) {
+          measureState.endIdx = Math.round(logical);
+          requestAnimationFrame(drawOverlay);
+          return;
+        }
+
+        // Dragging existing
+        if (rectDragState.active) {
+          const logicalDelta = logical - rectDragState.startLogical;
+          const { originalLogical1: ol1, originalLogical2: ol2 } = rectDragState;
+          const minL = Math.min(ol1, ol2), maxL = Math.max(ol1, ol2);
+
+          if (rectDragState.isVp) {
+            const v = drawnVpRects[rectDragState.index];
+            if (rectDragState.mode === 'move') { v.l1 = ol1 + logicalDelta; v.l2 = ol2 + logicalDelta; }
+            else if (rectDragState.mode === 'w') { v.l1 = ol1 === minL ? ol1 + logicalDelta : ol1; v.l2 = ol2 === minL ? ol2 + logicalDelta : ol2; }
+            else if (rectDragState.mode === 'e') { v.l1 = ol1 === maxL ? ol1 + logicalDelta : ol1; v.l2 = ol2 === maxL ? ol2 + logicalDelta : ol2; }
+          } else {
+            const priceDelta = price - rectDragState.startPrice;
+            const rect = drawnRects[rectDragState.index];
+            const { originalPrice1: op1, originalPrice2: op2 } = rectDragState;
+            const minP = Math.min(op1, op2), maxP = Math.max(op1, op2);
+            if (rectDragState.mode === 'move') { rect.l1 = ol1 + logicalDelta; rect.l2 = ol2 + logicalDelta; rect.p1 = op1 + priceDelta; rect.p2 = op2 + priceDelta; }
+            else if (rectDragState.mode === 'nw') { rect.l1 = ol1 === minL ? ol1 + logicalDelta : ol1; rect.l2 = ol2 === minL ? ol2 + logicalDelta : ol2; rect.p1 = op1 === maxP ? op1 + priceDelta : op1; rect.p2 = op2 === maxP ? op2 + priceDelta : op2; }
+            else if (rectDragState.mode === 'ne') { rect.l1 = ol1 === maxL ? ol1 + logicalDelta : ol1; rect.l2 = ol2 === maxL ? ol2 + logicalDelta : ol2; rect.p1 = op1 === maxP ? op1 + priceDelta : op1; rect.p2 = op2 === maxP ? op2 + priceDelta : op2; }
+            else if (rectDragState.mode === 'sw') { rect.l1 = ol1 === minL ? ol1 + logicalDelta : ol1; rect.l2 = ol2 === minL ? ol2 + logicalDelta : ol2; rect.p1 = op1 === minP ? op1 + priceDelta : op1; rect.p2 = op2 === minP ? op2 + priceDelta : op2; }
+            else if (rectDragState.mode === 'se') { rect.l1 = ol1 === maxL ? ol1 + logicalDelta : ol1; rect.l2 = ol2 === maxL ? ol2 + logicalDelta : ol2; rect.p1 = op1 === minP ? op1 + priceDelta : op1; rect.p2 = op2 === minP ? op2 + priceDelta : op2; }
           }
+          requestAnimationFrame(drawOverlay);
+          return;
+        }
 
-          if (vpCreateState.active) {
-            vpCreateState.active = false;
-            if (
-              Math.abs(vpCreateState.logical1 - vpCreateState.logical2) > 0.01
-            ) {
-              drawnVpRects.push({
-                l1: vpCreateState.logical1,
-                l2: vpCreateState.logical2,
-              });
-              localStorage.setItem(
-                "stat1_drawnVpRects",
-                JSON.stringify(drawnVpRects),
-              );
-            }
-            vpCreateState.logical1 = null;
-            vpCreateState.logical2 = null;
-
-            drawingVPModeActive = false;
-            document.getElementById("toggle-draw-vp").checked = false;
-            chart.applyOptions({ handleScroll: true });
-            requestAnimationFrame(drawOverlay);
+        // Mouse hover cursor: only on non-touch
+        if (!isTouch() && !drawingModeActive && !drawingVPModeActive && !measureState.modeActive) {
+          const hit = hitTestRects(logical, price);
+          hoveredRectIndex = -1; hoveredVpIndex = -1; hoveredCorner = "";
+          if (hit) {
+            if (hit.type === 'rect') { hoveredRectIndex = hit.idx; hoveredCorner = hit.corner; }
+            else { hoveredVpIndex = hit.idx; hoveredCorner = hit.corner; }
+            const cur = hit.corner === 'move' ? 'move'
+              : (hit.corner === 'nw' || hit.corner === 'se') ? 'nwse-resize'
+                : (hit.corner === 'ne' || hit.corner === 'sw') ? 'nesw-resize' : 'ew-resize';
+            wrapper.style.cursor = cur;
+          } else {
+            wrapper.style.cursor = drawingModeActive || drawingVPModeActive ? 'crosshair' : 'default';
           }
+          requestAnimationFrame(drawOverlay);
+        }
+      }, true);
 
-          if (rectDragState.active) {
-            rectDragState.active = false;
-            if (rectDragState.isVp)
-              localStorage.setItem(
-                "stat1_drawnVpRects",
-                JSON.stringify(drawnVpRects),
-              );
-            else
-              localStorage.setItem(
-                "stat1_drawnRects",
-                JSON.stringify(drawnRects),
-              );
+      // ─── Pointer UP ──────────────────────────────────────────────────
+      window.addEventListener("pointerup", (e) => {
+        if (!e.isPrimary) return;
+        activePointerId = null;
 
-            chart.applyOptions({
-              handleScroll: {
-                mouseWheel: true,
-                pressedMouseMove: true,
-                horzTouchDrag: true,
-                vertTouchDrag: true,
-              },
+        // Finish rect drawing
+        if (rectCreateState.active) {
+          rectCreateState.active = false;
+          if (Math.abs(rectCreateState.logical1 - rectCreateState.logical2) > 0.5 &&
+            Math.abs(rectCreateState.price1 - rectCreateState.price2) > 0) {
+            drawnRects.push({
+              l1: rectCreateState.logical1, p1: rectCreateState.price1,
+              l2: rectCreateState.logical2, p2: rectCreateState.price2
             });
-            requestAnimationFrame(drawOverlay);
+            localStorage.setItem("stat1_drawnRects", JSON.stringify(drawnRects));
           }
-        },
-        true,
-      );
+          rectCreateState.logical1 = rectCreateState.price1 = rectCreateState.logical2 = rectCreateState.price2 = null;
+          // Stay in draw mode — ready for next rectangle (like TradingView)
+          // setDrawMode("cursor") only if Escape pressed
+          requestAnimationFrame(drawOverlay);
+        }
 
-      // Add simple delete on right click when over a rect
-      wrapper.addEventListener("contextmenu", (e) => {
-        if (measureState.modeActive || e.shiftKey) return; // Prioritize measure mode if active or shifted
-
-        if (lastCrosshairLogical !== null) {
-          let price = candleSeries.coordinateToPrice(
-            e.clientY - wrapper.getBoundingClientRect().top,
-          );
-          if (price !== null) {
-            for (let i = drawnRects.length - 1; i >= 0; i--) {
-              let r = drawnRects[i];
-              let minL = Math.min(r.l1, r.l2),
-                maxL = Math.max(r.l1, r.l2);
-              let minP = Math.min(r.p1, r.p2),
-                maxP = Math.max(r.p1, r.p2);
-              if (
-                lastCrosshairLogical >= minL &&
-                lastCrosshairLogical <= maxL &&
-                price >= minP &&
-                price <= maxP
-              ) {
-                e.preventDefault(); // Stop normal measure mode from right click
-                drawnRects.splice(i, 1);
-                if (selectedRectIndex === i) selectedRectIndex = -1;
-                else if (selectedRectIndex > i) selectedRectIndex--;
-                localStorage.setItem(
-                  "stat1_drawnRects",
-                  JSON.stringify(drawnRects),
-                );
-                requestAnimationFrame(drawOverlay);
-                return;
-              }
-            }
+        // Finish VP drawing
+        if (vpCreateState.active) {
+          vpCreateState.active = false;
+          if (Math.abs(vpCreateState.logical1 - vpCreateState.logical2) > 0.5) {
+            drawnVpRects.push({ l1: vpCreateState.logical1, l2: vpCreateState.logical2 });
+            localStorage.setItem("stat1_drawnVpRects", JSON.stringify(drawnVpRects));
           }
+          vpCreateState.logical1 = vpCreateState.logical2 = null;
+          // Stay in VP draw mode for next zone
+          requestAnimationFrame(drawOverlay);
+        }
+
+        // Finish drag
+        if (rectDragState.active) {
+          rectDragState.active = false;
+          if (rectDragState.isVp)
+            localStorage.setItem("stat1_drawnVpRects", JSON.stringify(drawnVpRects));
+          else
+            localStorage.setItem("stat1_drawnRects", JSON.stringify(drawnRects));
+          chart.applyOptions({ handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: true } });
+          requestAnimationFrame(drawOverlay);
+        }
+      }, true);
+
+      // ─── Keyboard ────────────────────────────────────────────────────
+      window.addEventListener("keydown", (e) => {
+        if ((e.key === "Delete" || e.key === "Backspace") && !rectCreateState.active && !vpCreateState.active) {
+          if (selectedRectIndex !== -1) { drawnRects.splice(selectedRectIndex, 1); selectedRectIndex = -1; hoveredRectIndex = -1; localStorage.setItem("stat1_drawnRects", JSON.stringify(drawnRects)); }
+          else if (selectedVpIndex !== -1) { drawnVpRects.splice(selectedVpIndex, 1); selectedVpIndex = -1; hoveredVpIndex = -1; localStorage.setItem("stat1_drawnVpRects", JSON.stringify(drawnVpRects)); }
+          else if (hoveredRectIndex !== -1) { drawnRects.splice(hoveredRectIndex, 1); hoveredRectIndex = -1; localStorage.setItem("stat1_drawnRects", JSON.stringify(drawnRects)); }
+          else if (hoveredVpIndex !== -1) { drawnVpRects.splice(hoveredVpIndex, 1); hoveredVpIndex = -1; localStorage.setItem("stat1_drawnVpRects", JSON.stringify(drawnVpRects)); }
+          wrapper.style.cursor = "default";
+          requestAnimationFrame(drawOverlay);
         }
       });
 
+      // ─── Right click (desktop delete) ────────────────────────────────
+      wrapper.addEventListener("contextmenu", (e) => {
+        e.preventDefault();
+        if (measureState.modeActive) { setDrawMode("cursor"); return; }
+        if (drawingModeActive || drawingVPModeActive) { setDrawMode("cursor"); return; }
+        const { logical, price } = ptrToChart(e);
+        if (logical === null || price === null) return;
+        const hit = hitTestRects(logical, price);
+        if (hit) {
+          if (hit.type === 'rect') { drawnRects.splice(hit.idx, 1); if (selectedRectIndex === hit.idx) selectedRectIndex = -1; else if (selectedRectIndex > hit.idx) selectedRectIndex--; localStorage.setItem("stat1_drawnRects", JSON.stringify(drawnRects)); }
+          else { drawnVpRects.splice(hit.idx, 1); if (selectedVpIndex === hit.idx) selectedVpIndex = -1; else if (selectedVpIndex > hit.idx) selectedVpIndex--; localStorage.setItem("stat1_drawnVpRects", JSON.stringify(drawnVpRects)); }
+          requestAnimationFrame(drawOverlay);
+        }
+      });
+
+      // ─── Crosshair for measure preview ───────────────────────────────
       chart.subscribeCrosshairMove((param) => {
         if (param.logical !== undefined && param.logical !== null) {
           lastCrosshairLogical = param.logical;
@@ -3381,6 +3136,13 @@
           }
         } else {
           lastCrosshairLogical = null;
+        }
+      });
+
+      // ─── Keyboard Shift to activate measure ──────────────────────────
+      window.addEventListener("keydown", (e) => {
+        if ((e.key === "Shift" || e.key === "ShiftLeft" || e.key === "ShiftRight") && !measureState.modeActive) {
+          setDrawMode("measure");
         }
       });
     }
