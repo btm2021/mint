@@ -4,11 +4,19 @@
   "description": "Professional crypto trading chart with ATR Bot, Volume Profile & VWAP",
   "start_url": "./index.html",
   "scope": "./",
-  "display": "standalone",
+  "display": "fullscreen",
+  "display_override": [
+    "fullscreen",
+    "standalone",
+    "minimal-ui"
+  ],
   "orientation": "any",
   "background_color": "#080810",
   "theme_color": "#080810",
-  "categories": ["finance", "utilities"],
+  "categories": [
+    "finance",
+    "utilities"
+  ],
   "icons": [
     {
       "src": "icon-192.png",

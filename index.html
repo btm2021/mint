@@ -3,7 +3,8 @@
 
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="viewport"
+    content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <title>MintChart</title>
 
   <!-- PWA -->
@@ -38,6 +39,11 @@
       --warn-color: #FFC107;
       --topbar-h: 52px;
       --sidebar-w: 48px;
+      /* iOS safe-area insets (filled by env() at runtime) */
+      --safe-top: env(safe-area-inset-top, 0px);
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+      --safe-left: env(safe-area-inset-left, 0px);
+      --safe-right: env(safe-area-inset-right, 0px);
     }
 
     * {
@@ -147,10 +153,13 @@
 
     /* ===== TOPBAR ===== */
     #topbar {
-      height: var(--topbar-h);
+      /* Height = fixed bar + iOS status-bar safe area */
+      height: calc(var(--topbar-h) + var(--safe-top));
+      padding-top: var(--safe-top);
+      padding-left: calc(14px + var(--safe-left));
+      padding-right: calc(14px + var(--safe-right));
       display: flex;
       align-items: center;
-      padding: 0 14px;
       gap: 10px;
       background: linear-gradient(180deg, #0f0f1a 0%, #0b0b14 100%);
       border-bottom: 1px solid var(--border-color);
@@ -505,7 +514,7 @@
     #draw-sidebar {
       position: relative;
       width: var(--sidebar-w);
-      height: calc(100vh - var(--topbar-h));
+      height: calc(100vh - var(--topbar-h) - var(--safe-top));
       background: linear-gradient(180deg, #0d0d18 0%, #090912 100%);
       border-right: 1px solid var(--border-color);
       display: flex;
@@ -872,7 +881,7 @@
     #main-area {
       display: flex;
       width: 100vw;
-      height: calc(100vh - var(--topbar-h));
+      height: calc(100vh - var(--topbar-h) - var(--safe-top));
       transition: height 0.2s;
     }
 
@@ -3419,7 +3428,6 @@
     // Lightweight-charts handles pinch zoom internally;
     // we must stop the browser from intercepting it.
     // =============================================
-    // =============================================
     // PWA — Register Service Worker (network-only)
     // =============================================
     if ('serviceWorker' in navigator) {
@@ -3427,6 +3435,43 @@
         .then(reg => console.log('[SW] Registered:', reg.scope))
         .catch(err => console.warn('[SW] Registration failed:', err));
     }
+
+    // =============================================
+    // PWA IMMERSIVE — Auto fullscreen on Android
+    // iOS uses safe-area-inset CSS (already done).
+    // Android: request Fullscreen API when running
+    // from home screen so nav bar disappears.
+    // =============================================
+    (function pwaFullscreen() {
+      // Detect if launched as installed PWA (not in browser tab)
+      const isStandalone =
+        window.matchMedia('(display-mode: standalone)').matches ||
+        window.matchMedia('(display-mode: fullscreen)').matches ||
+        window.navigator.standalone === true; // iOS
+
+      if (!isStandalone) return; // Running in browser — don't touch fullscreen
+
+      // On Android, request native fullscreen so the system nav bar hides
+      const el = document.documentElement;
+      function goFullscreen() {
+        const fn = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen;
+        if (fn) fn.call(el).catch(() => { }); // silently ignore if denied
+      }
+
+      // Must be triggered by user gesture on first interaction
+      document.addEventListener('pointerdown', goFullscreen, { once: true });
+      document.addEventListener('keydown', goFullscreen, { once: true });
+
+      // Re-apply if user somehow exits fullscreen
+      document.addEventListener('fullscreenchange', () => {
+        if (!document.fullscreenElement && isStandalone) {
+          // Small delay then re-request
+          setTimeout(() => {
+            document.addEventListener('pointerdown', goFullscreen, { once: true });
+          }, 300);
+        }
+      });
+    })();
 
     (function blockBrowserZoom() {
       const wrapper = document.getElementById('chart-wrapper');
