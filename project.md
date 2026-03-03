@@ -1,55 +1,48 @@
-# Tài liệu Hướng dẫn Phát triển & Bảo trì Dự án biểu đồ (stat1.html)
+# Project Structure & Refactoring Summary
 
-Tài liệu này được tạo ra để cung cấp bối cảnh (context) đầy đủ, cấu trúc hiện tại và các quy tắc cốt lõi của dự án dành cho bất kỳ AI Agent nào tiếp quản công việc trong tương lai.
+Dự án đã được tái cấu trúc từ một file `index.html` duy nhất thành một hệ thống module hóa để dễ dàng quản lý và bảo trì.
 
-## 1. Tổng quan & Mục tiêu Dự án
-Đây là một Single-Page Application (SPA) nằm gọn trong một file `stat1.html`. Ứng dụng hoạt động như một nền tảng biểu đồ giao dịch (Trading Chart) siêu nhẹ, lấy dữ liệu trực tiếp từ Binance Futures (klines API) và vẽ các chỉ báo tùy chỉnh với độ phức tạp cao mà thư viện mặc định không hỗ trợ sẵn.
+## 📄 Các file chính
 
-## 2. Công nghệ, Khung làm việc (Tech Stack) & Các Ràng Buộc Cốt Lõi
-**CẢNH BÁO QUAN TRỌNG DÀNH CHO AI AGENT:**
-- **Ngôn ngữ:** Thuần HTML5, Vanilla JavaScript (ES6+), và Vanilla CSS.
-- **KHÔNG SỬ DỤNG FRAMEWORK:** Tuyệt đối không sử dụng React, Vue, Angular, hay TailwindCSS. User yêu cầu ứng dụng phải giữ ở mức tối giản và thuần tuý nhất để đạt tốc độ cao.
-- **Thư viện bên thứ 3 duy nhất:** `LightweightCharts` (của TradingView) dùng để hiển thị biểu đồ Nến (Candlestick) cơ bản, trục thời gian, trục giá, và khả năng tương tác (zoom/pan). 
+### 🏗️ Cốt lõi (HTML & CSS)
+- **`index.html`**: Chỉ còn chứa cấu trúc DOM cơ bản và các thẻ script/link. Mọi logic và style đã được đưa ra ngoài.
+- **`css/style.css`**: Tập hợp tất cả styles, bao gồm Design Tokens, Layout, Loading Screen, Topbar, Sidebar và các Panels.
 
-## 3. Cấu trúc Render & Luồng Dữ liệu (Kiến trúc cốt lõi)
-Dự án sử dụng cơ chế **"Render Kép" (Dual Rendering Pattern)** ghép chồng lên nhau:
-1. **Lớp Đáy (Native LightweightCharts):** Xử lý sự kiện chuột, trục toạ độ, vẽ Nến (Candlestick), vẽ các đường Line tĩnh (như ATRBot 2, Session VWAP).
-2. **Lớp Đỉnh (HTML5 Canvas Overlay):** Điểm đặc biệt nhất của dự án. Một thẻ `<canvas>` trong suốt được đặt đè chính xác lên trên biểu đồ chart. Hàm `drawOverlay()` sẽ liên tục được gọi qua `requestAnimationFrame` mỗi khi biểu đồ dịch chuyển hoặc thay đổi kích thước. Lớp này dùng để tự vẽ thủ công các hình khối phức tạp (Volume Profile ngang, Đám mây màu ATRBot, Vùng VSR, Các công cụ vẽ tay).
+### ⚙️ Cấu hình & Trạng thái
+- **`js/config.js`**: Lưu trữ các hằng số cài đặt (ATR length, EMA length, mốc TP/SL) và các biến trạng thái toàn cục (SYMBOL, INTERVAL, v.v.).
 
-*Luồng Dữ Liệu:*
--> Fetch `/fapi/v1/klines` -> Cache vào `localStorage` -> Lưu vào mảng `globalBars` -> Tính toán các chỉ báo (BVC, ATR, VWAP) -> Đưa dữ liệu native vào LWC -> Gọi `requestAnimationFrame(drawOverlay)` để đồng bộ vẽ Canvas.
+### 📊 Logic Chỉ báo (Indicators)
+- **`js/indicators.js`**: Chứa các thuật toán tính toán toán học cho:
+  - **ATRBot**: Xác định chu kỳ xu hướng và các đường Trail.
+  - **FRVP (Fixed Range Volume Profile)**: Phân bổ khối lượng theo vùng giá.
+  - **VSR (Volatility Stop/Resistance)**: Vùng kháng cự/hỗ trợ dựa trên biến động.
+  - **Standard VWAP**: Tính toán đường giá trung bình theo phiên.
+  - **BVC (Bulk Volume Classification)**: Thuật toán phân loại volume Buy/Sell từ dữ liệu OHLCV.
 
-## 4. Chi tiết Các Chỉ Báo & Tính Năng Đang Có
+### 🌐 Kết nối & Dữ liệu
+- **`js/api.js`**: 
+  - Giao tiếp với Binance Futures API.
+  - Hệ thống Cache nâng cao (Sử dụng `localStorage` cho 50k nến).
+  - Quản lý WebSocket cho giá Realtime và Ticker.
 
-### 4.1. Khối lượng & Volume Profile (Rất phức tạp)
-- **Thuật toán BVC (Bulk Volume Classification):** Bóc tách Buy Volume / Sell Volume từ nến OHLCV thông thường theo công thức chuẩn hoá phân phối chuẩn (Easley, López de Prado & O'Hara). Hàm: `calculateBVCVolumes`.
-- **FRVP (Fixed Range Volume Profile) & Trực quan:**
-  - Được vẽ hoàn toàn thủ công bằng thẻ `<canvas>` trong hàm `drawOverlay()`. 
-  - **Màu sắc TradingView Delta:** Vẽ song song khối lượng Buy (Xanh dương) và Sell (Vàng/Nâu). Hiển thị theo 3 sắc độ (Tri-color Delta style):
-    - Đậm/Sáng nhất: Phần chênh lệch (Delta) của phe mạnh hơn.
-    - Tối nhất: Phần khối lượng bị trung hòa của phe yếu.
-    - Trung bình: Phần khối lượng mạnh tương đương phe yếu bị trung hòa.
-  - Hỗ trợ hiển thị vùng Value Area (VAH/VAL) với nền mờ, POC (Point of Control) line xanh/đỏ dựa theo Delta dương/âm.
+### 🖼️ Đồ họa & Biểu đồ
+- **`js/chart.js`**: 
+  - Khởi tạo thư viện `lightweight-charts`.
+  - Hệ thống **Canvas Overlay** xử lý việc vẽ các vùng chỉ báo (Cloud, Zones, Volume Profile) trên biểu đồ.
+- **`js/interactions.js`**:
+  - Xử lý các sự kiện chuột, chạm (touch) và bàn phím.
+  - Chống Zoom trình duyệt (vô hiệu hóa pinch-zoom trang để nhường cho thư viện chart).
 
-### 4.2. Chỉ báo đường / Vùng (Lines & Clouds)
-- **Session VWAP (Standard):** Tính toán giá trung bình gia quyền theo khối lượng `(Volume * Typical Price) / Volume`, **tự động reset lại từ đầu mỗi ngày vào lúc 00:00 UTC**. Được vẽ bằng `LineSeries` gốc của LightweightCharts (màu trắng nét liền, width=2) để đảm bảo không bị lỗi độ phân giải. (Hàm `calculateStandardVWAP`).
-- **ATRBot:** Hệ thống xác định xu hướng chia thành các "chu kỳ" (cycles) dựa trên EMA và ATR trailing stop.
-  - Vẽ dải băng màu xanh/đỏ lấp đầy khoảng trống giữa Trend 1 (EMA) và Trend 2 (Trail) trong lớp Canvas.
-- **VSR (Volatility State Range):** Định hình các khối hình chữ nhật màu vàng nhạt nền dưới background dựa trên phân tích độ lệch chuẩn.
+### 🛠️ Công cụ & Giao diện
+- **`js/tools.js`**: Quản lý các chế độ vẽ (Rectangle, VP Zone, Measure) và công cụ **Analyse Cycle**.
+- **`js/ui.js`**: Logic cho ô tìm kiếm symbol (hỗ trợ gợi ý và cache), quản lý Interval, Settings Panel và Cache Manager.
 
-### 4.3. Công cụ tương tác thao tác tay
-Xử lý hoàn toàn thông qua sự kiện `mousedown`, `mousemove`, `mouseup`, `keydown` bắt ở cấp độ Container và thao tác trên Canvas Overlay:
-- Cờ chặn di chuyển: `kinematicScroll` và `handleScroll` của chart sẽ bị vô hiệu hóa khi người dùng kích hoạt công cụ vẽ.
-- **Rectangle Tool (Công cụ Hình chữ nhật):**
-  - Cho phép click kéo để vẽ vùng tuỳ chỉnh. 
-  - Lưu toạ độ dựa vào Logical Index (time) và Trục Giá (Price) để nó dính chặt vào nến khi zoom/pan.
-  - Cho phép: Click chọn (hiển thị 4 handle ở góc), kéo thả di chuyển toàn bộ, nắm 4 góc để resize thay đổi kích thước, nhấn phím `Delete` để xoá.
-- **Measure Tool (Thước Đo):** Ruler đo khoảng cách số thanh nến, thời gian, giá, và phần trăm. Hoạt động trên 3 click (start, end, reset).
+### 🚀 Khởi chạy
+- **`js/main.js`**: Entry point của ứng dụng, kết nối tất cả các module và thực hiện quy trình khởi tạo khi trang load xong.
 
-## 5. Hướng dẫn Dành Cho AI Agent (Những điểm cần lưu ý khi Code)
-- **KHÔNG SỬA CẤU TRÚC RENDER CANVAS NẾU KHÔNG CẦN THIẾT:** Việc đồng bộ tọa độ giữa thư viện LightweightCharts (`timeScale.logicalToCoordinate`, `series.priceToCoordinate`) ra thẻ Canvas là rất nhạy cảm. Luôn kiểm tra `x !== null && y !== null` trước khi bắt đầu `ctx.lineTo()`.
-- **Logic VWAP:** Đã từng dính bug khi dùng canvas vẽ VWAP gây lỗi tàng hình. VWAP nay đã dùng native `LineSeries`. Hãy cứ dùng LineSeries nếu đó chỉ đơn thuần là đường (Line).
-- **Hệ trục Thời gian:** LWC dùng timestamp / 1000 (giây). Cần nhớ quy đổi khi dùng `new Date(...)`.
-- **Ràng buộc khi vẽ Canvas:** Hãy luôn nhớ luồng `ctx.beginPath()`, `ctx.moveTo()`, `ctx.lineTo()`, `ctx.stroke()`, cập nhật `lineWidth` và `strokeStyle` để tránh hiệu ứng stroke đè lên các tính năng vẽ khác. Hàm `drawOverlay()` đang kiêm nhiệm vẽ ATR Cloud, VSR, Recangle, Measure, VolumeProfile... nên hãy ngắt cách (pass) cẩn thận bằng comments.
-
-Dự án hiện tại đang khá hoàn thiện về frontend thuần tuý. Ưu tiên hàng đầu khi bổ sung chức năng mới là giữ cho `stat1.html` nhẹ nhất có thể và đảm bảo 100% không để lộ các dòng code không cần thiết trong quá trình sửa đổi. Trang bị Vanilla JavaScript, HTML5 Canvas Mastery sẽ là chìa khoá cho công việc tiếp theo.
+## 🛠️ Các thay đổi quan trọng vừa thực hiện
+1. **Loại bỏ PWA**: Xóa bỏ hoàn toàn manifest, service worker và logic liên quan đến PWA để quay lại kiến trúc web chuẩn.
+2. **Tăng Cache**: Nâng hạn mức lưu trữ từ 10k lên 50k nến.
+3. **Price Scale thông minh**: Tự động định dạng số thập phân dựa trên mức giá của Symbol (BTCDUSDT vs các coin giá thấp).
+4. **Touch Optimized**: Chỉnh sửa lại các công cụ vẽ để hoạt động mượt mà trên iPad và các thiết bị cảm ứng.
+5. **Modularization**: Tách code ra 9 file JS riêng biệt để dễ tái sử dụng.
