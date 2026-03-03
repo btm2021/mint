@@ -274,13 +274,13 @@ function setupAnalyseTool() {
                   <span style="font-size:9px;opacity:.6">(${fpct(trade.riskPct)})</span></span>
               </div>
               <div class="ap-trade-row">
-                <span class="ap-trade-label">Take Profit (2R)</span>
+                <span class="ap-trade-label">Take Profit</span>
                 <span class="ap-trade-val tp">${f(trade.tp)}
                   <span style="font-size:9px;opacity:.6">(${fpct(trade.rewardPct)})</span></span>
               </div>
               <div class="ap-trade-row">
                 <span class="ap-trade-label">Risk : Reward</span>
-                <span class="ap-trade-val rr">1 : 2.0 RR</span>
+                <span class="ap-trade-val rr">1 : ${(trade.rewardPct / Math.abs(trade.riskPct)).toFixed(2)} RR</span>
               </div>
             </div>`;
         } else {
@@ -1053,7 +1053,7 @@ function setupAnalyseTool() {
             const dir = (lastCyc && lastCyc.state === -1) ? 'SHORT' : 'LONG';
             const sl = calcSL(dir, entryPrice);
             const risk = Math.abs(sl - entryPrice);
-            const tp = dir === 'LONG' ? entryPrice + 2 * risk : entryPrice - 2 * risk;
+            const tp = dir === 'LONG' ? entryPrice + 2 * risk : entryPrice - 2 * risk; // Standard 2R start
             const id = Date.now();
             const riskPct = (Math.abs(sl - entryPrice) / entryPrice * 100).toFixed(2);
             const rewardPct = (Math.abs(tp - entryPrice) / entryPrice * 100).toFixed(2);
@@ -1061,7 +1061,7 @@ function setupAnalyseTool() {
                 id, dir, entryPrice, sl, tp,
                 entryLine: candleSeries2.createPriceLine({ price: entryPrice, color: '#E2E8F0', lineWidth: 2, lineStyle: LS.Solid, title: `#${trades.length + 1} Entry ${dir}`, axisLabelVisible: true }),
                 slLine: candleSeries2.createPriceLine({ price: sl, color: '#FF5252', lineWidth: 1, lineStyle: LS.Dashed, title: `SL −${riskPct}%`, axisLabelVisible: true }),
-                tpLine: candleSeries2.createPriceLine({ price: tp, color: '#00E676', lineWidth: 1, lineStyle: LS.Dashed, title: `TP +${rewardPct}% (2R)`, axisLabelVisible: true }),
+                tpLine: candleSeries2.createPriceLine({ price: tp, color: '#00E676', lineWidth: 1, lineStyle: LS.Dashed, title: `TP +${rewardPct}% (RR 1:2.00)`, axisLabelVisible: true }),
             };
             trades.push(trade);
             refreshTradePanel();
@@ -1085,11 +1085,14 @@ function setupAnalyseTool() {
 
         // ── Update price lines sau khi drag ────────────────────────────────────
         function applyTrade(t) {
-            const riskPct = (Math.abs(t.sl - t.entryPrice) / t.entryPrice * 100).toFixed(2);
-            const rewardPct = (Math.abs(t.tp - t.entryPrice) / t.entryPrice * 100).toFixed(2);
+            const risk = Math.abs(t.sl - t.entryPrice);
+            const reward = Math.abs(t.tp - t.entryPrice);
+            const rr = risk > 0 ? (reward / risk).toFixed(2) : '0.00';
+            const riskPct = (risk / t.entryPrice * 100).toFixed(2);
+            const rewardPct = (reward / t.entryPrice * 100).toFixed(2);
             t.entryLine.applyOptions({ price: t.entryPrice });
             t.slLine.applyOptions({ price: t.sl, title: `SL −${riskPct}%` });
-            t.tpLine.applyOptions({ price: t.tp, title: `TP +${rewardPct}% (2R)` });
+            t.tpLine.applyOptions({ price: t.tp, title: `TP +${rewardPct}% (RR 1:${rr})` });
             refreshTradePanel();
         }
 
@@ -1167,8 +1170,6 @@ function setupAnalyseTool() {
                         t.entryPrice += delta; t.sl += delta; t.tp += delta;
                     } else if (dragging.handle === 'sl') {
                         t.sl = newPrice;
-                        const risk = Math.abs(t.sl - t.entryPrice);
-                        t.tp = t.dir === 'LONG' ? t.entryPrice + 2 * risk : t.entryPrice - 2 * risk;
                     } else {
                         t.tp = newPrice;
                     }
@@ -1339,25 +1340,36 @@ function setupAnalyseTool() {
                     const totalW = buyW + sellW;
                     const isBuyDom = r.buyVol >= r.sellVol;
                     const inVA = r.inVA;
-                    if (sellW > 0) {
+                    if (totalW > 0) {
                         if (printMode) {
-                            oc.fillStyle = inVA ? "rgba(0,0,0,0.4)" : "rgba(0,0,0,0.15)";
+                            // Chế độ in nhiệt: Dùng 3 sắc thái xám
+                            const baseGray = r.inVA ? { b: "rgba(0,0,0,0.45)", d: "rgba(0,0,0,0.6)", m: "rgba(0,0,0,0.3)" }
+                                : { b: "rgba(0,0,0,0.15)", d: "rgba(0,0,0,0.25)", m: "rgba(0,0,0,0.1)" };
+                            let currX = xLeft;
+                            let dW = Math.abs(buyW - sellW), wW = Math.min(buyW, sellW), sW = Math.max(buyW, sellW) - dW;
+                            if (dW > 0) { oc.fillStyle = baseGray.b; oc.fillRect(currX, topY, dW, rowH); currX += dW; }
+                            if (wW > 0) { oc.fillStyle = baseGray.d; oc.fillRect(currX, topY, wW, rowH); currX += wW; }
+                            if (sW > 0) { oc.fillStyle = baseGray.m; oc.fillRect(currX, topY, sW, rowH); }
                         } else {
-                            oc.fillStyle = isBuyDom
-                                ? (inVA ? "rgba(23,72,111,0.85)" : "rgba(23,72,111,0.35)")
-                                : (inVA ? "rgba(130,60,0,0.85)" : "rgba(130,60,0,0.35)");
+                            // Chế độ hiển thị: Đồng bộ màu với Chart chính
+                            const baseCol = r.buyVol >= r.sellVol
+                                ? { // Bullish colors
+                                    bright: r.inVA ? "rgba(22,112,175,0.95)" : "rgba(22,112,175,0.4)",
+                                    dark: r.inVA ? "rgba(23,72,111,0.95)" : "rgba(23,72,111,0.4)",
+                                    medium: r.inVA ? "rgba(23,52,79,0.95)" : "rgba(23,52,79,0.4)"
+                                }
+                                : { // Bearish colors
+                                    bright: r.inVA ? "rgba(183,145,38,0.95)" : "rgba(183,145,38,0.4)",
+                                    dark: r.inVA ? "rgba(103,89,43,0.95)" : "rgba(103,89,43,0.4)",
+                                    medium: r.inVA ? "rgba(62,60,45,0.95)" : "rgba(62,60,45,0.4)"
+                                };
+
+                            let currX = xLeft;
+                            let dW = Math.abs(buyW - sellW), wW = Math.min(buyW, sellW), sW = Math.max(buyW, sellW) - dW;
+                            if (dW > 0) { oc.fillStyle = baseCol.bright; oc.fillRect(currX, topY, dW, rowH); currX += dW; }
+                            if (wW > 0) { oc.fillStyle = baseCol.dark; oc.fillRect(currX, topY, wW, rowH); currX += wW; }
+                            if (sW > 0) { oc.fillStyle = baseCol.medium; oc.fillRect(currX, topY, sW, rowH); }
                         }
-                        oc.fillRect(xLeft, topY, sellW, rowH);
-                    }
-                    if (buyW > 0) {
-                        if (printMode) {
-                            oc.fillStyle = inVA ? "rgba(0,0,0,0.6)" : "rgba(0,0,0,0.25)";
-                        } else {
-                            oc.fillStyle = isBuyDom
-                                ? (inVA ? "rgba(43,158,118,0.85)" : "rgba(43,158,118,0.35)")
-                                : (inVA ? "rgba(76,175,80,0.85)" : "rgba(76,175,80,0.35)");
-                        }
-                        oc.fillRect(xLeft + sellW, topY, buyW, rowH);
                     }
                     if (r.poc) {
                         oc.strokeStyle = printMode ? "#000" : (vpData.pocDelta >= 0 ? "rgba(76,175,80,1)" : "rgba(255,82,82,1)");
