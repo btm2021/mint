@@ -1064,6 +1064,7 @@ body.fullscreen #draw-sidebar {
 }
 
 .am-entry-btn:hover,
+
 .am-entry-btn.am-toggle-on {
   background: rgba(167, 139, 250, 0.18) !important;
   border-color: rgba(167, 139, 250, 0.6) !important;
@@ -1077,6 +1078,20 @@ body.fullscreen #draw-sidebar {
   color: #FF9800 !important;
   opacity: 1 !important;
   gap: 6px;
+}
+
+/* Nút Print 🖨️ */
+.am-print-btn {
+  background: rgba(255, 255, 255, 0.04) !important;
+  border-color: rgba(255, 255, 255, 0.2) !important;
+  color: rgba(255, 255, 255, 0.65) !important;
+  gap: 5px;
+}
+
+.am-print-btn:hover {
+  background: rgba(255, 255, 255, 0.1) !important;
+  border-color: rgba(255, 255, 255, 0.4) !important;
+  color: #fff !important;
 }
 
 .am-replay-btn:hover:not(:disabled) {

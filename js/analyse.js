@@ -572,13 +572,324 @@ function setupAnalyseTool() {
         toolbar.appendChild(speedSel);
         wrap._stopReplay = stopReplay;
 
+        // ── Print button ──────────────────────────────────────────────────────────
+        const printBtn = document.createElement('button');
+        printBtn.className = 'am-toggle am-print-btn';
+        printBtn.innerHTML = `<span>🖨️</span><span class="am-toggle-label">Print</span>`;
+        printBtn.title = 'In hóa đơn phân tích (máy in nhiệt)';
+        toolbar.appendChild(printBtn);
 
-        chartSection.appendChild(toolbar);
+        printBtn.addEventListener('click', () => {
+            // ── Chụp ảnh biểu đồ (Chuyển theme & chụp đồng bộ để tránh flash trắng) ──
+            const originalOptions = analyseChartInstance.options();
+            analyseChartInstance.applyOptions({
+                layout: { background: { color: '#ffffff' }, textColor: '#000000' },
+                grid: { vertLines: { color: '#e0e0e0' }, horzLines: { color: '#e0e0e0' } }
+            });
+            drawOverlayCanvas({ printMode: true });
+
+            const chartCanvas = analyseChartInstance.takeScreenshot();
+
+            // Khôi phục theme gốc ngay lập tức sau khi lấy được canvas
+            analyseChartInstance.applyOptions(originalOptions);
+            drawOverlayCanvas();
+
+            const tempCanvas = document.createElement('canvas');
+            const dpr = window.devicePixelRatio || 1;
+            tempCanvas.width = chartCanvas.width;
+            tempCanvas.height = chartCanvas.height;
+            const tCtx = tempCanvas.getContext('2d');
+
+            // 1. Vẽ chart chính
+            tCtx.drawImage(chartCanvas, 0, 0);
+
+            // 2. Vẽ đè overlay indicators
+            const priceScaleWidth = analyseChartInstance.priceScale('right').width() * dpr;
+            const timeScaleHeight = 26 * dpr;
+            const paneWidth = tempCanvas.width - priceScaleWidth;
+            const paneHeight = tempCanvas.height - timeScaleHeight;
+            tCtx.drawImage(overlayCanvas, 0, 0, paneWidth, paneHeight);
+
+            // 3. Xử lý Pixel: Chuyển sang Đen & Trắng tuyệt đối (Pure B&W Thresholding)
+            const imgData = tCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+            const data = imgData.data;
+            for (let i = 0; i < data.length; i += 4) {
+                // Luminance: R*0.299 + G*0.587 + B*0.114
+                const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+                // Ngưỡng 210: trên 210 là trắng (nền), dưới 210 là đen (nến/chỉ báo)
+                const binary = gray > 210 ? 255 : 0;
+                data[i] = data[i + 1] = data[i + 2] = binary;
+            }
+            tCtx.putImageData(imgData, 0, 0);
+
+            const chartImgData = tempCanvas.toDataURL('image/png');
+
+            const now = new Date();
+
+            const dateStr = now.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+            const timeStr = now.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            const lastCyc = bot1CyclesSlice[bot1CyclesSlice.length - 1];
+            const trend = lastCyc ? (lastCyc.state === 1 ? 'TĂNG  ▲' : 'GIẢM  ▼') : 'N/A';
+            const lastBar = slice[slice.length - 1];
+            const closeP = lastBar ? pf(lastBar.close) : '—';
+
+            // VSR summary
+            const vsrNear = vsrZonesSlice[vsrZonesSlice.length - 1];
+            const vsrLine = vsrNear
+                ? `${pf(vsrNear.lower)} — ${pf(vsrNear.upper)}`
+                : 'Chưa xác định';
+            const vsrPos = vsrNear && lastBar
+                ? (lastBar.close > vsrNear.upper ? 'TRÊN VSR (LONG bias)'
+                    : lastBar.close < vsrNear.lower ? 'DUOI VSR (SHORT bias)' : 'TRONG VSR')
+                : '—';
+
+            // FVG summary
+            const openFVGs = fvgList.slice(0, 5);
+
+            // Verdict text from panel
+            const verdictEl = analysisPanel.querySelector('.ap-verdict');
+            const verdictText = verdictEl ? verdictEl.innerText : '';
+
+            // Trades summary
+            const tradeLines = trades.map((t, i) => {
+                const risk = Math.abs(t.sl - t.entryPrice);
+                const reward = Math.abs(t.tp - t.entryPrice);
+                const rr = risk > 0 ? (reward / risk).toFixed(2) : '?';
+                const pnlStr = t.pnl !== undefined ? (t.pnl >= 0 ? `+${t.pnl.toFixed(2)}` : t.pnl.toFixed(2)) + ' U' : '';
+                const roeStr = t.roe !== undefined ? (t.roe >= 0 ? `+${t.roe.toFixed(2)}` : t.roe.toFixed(2)) + '%' : '';
+                const st = t.status ? t.status.toUpperCase() : 'PENDING';
+                return `
+#${i + 1} ${t.dir.padEnd(5)} | ${st.padEnd(7)} ${pnlStr ? '| ' + pnlStr.padEnd(10) + roeStr : ''}
+  Entry : ${pf(t.entryPrice)}
+  SL    : ${pf(t.sl)}
+  TP    : ${pf(t.tp)}   RR 1:${rr}`;
+            }).join('\n' + '-'.repeat(32) + '\n');
+
+            const receiptHTML = `<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<title>MINT - ${SYMBOL} Receipt</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Share Tech Mono', 'Courier New', monospace;
+    font-size: 11px;
+    background: #e0e0e0;
+    color: #000;
+    padding: 20px 0;
+    display: flex;
+    justify-content: center;
+  }
+  .receipt {
+    background: #fff;
+    width: 80mm;
+    padding: 10mm 4mm;
+    box-shadow: 0 0 10px rgba(0,0,0,0.1);
+    position: relative;
+    overflow: hidden;
+  }
+  /* Jagged edges */
+  .receipt::before, .receipt::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: linear-gradient(-45deg, #e0e0e0 2px, transparent 0), linear-gradient(45deg, #e0e0e0 2px, transparent 0);
+    background-size: 4px 4px;
+    z-index: 10;
+  }
+  .receipt::before { top: 0; }
+  .receipt::after { bottom: 0; transform: rotate(180deg); }
+
+  .center  { text-align: center; }
+  .bold    { font-weight: bold; }
+  .logo    { font-size: 26px; letter-spacing: 4px; font-weight: bold; margin-bottom: 2px; text-transform: uppercase; }
+  .sub     { font-size: 9px; opacity: .7; letter-spacing: 1px; }
+  .dash    { border-top: 1px dashed #000; margin: 6px 0; }
+  .double-dash { border-top: 1px double #000; border-bottom: 1px double #000; height: 4px; margin: 8px 0; }
+  .row     { display: flex; justify-content: space-between; margin: 2px 0; }
+  .lbl     { text-transform: uppercase; }
+  .verdict-box {
+    border: 1px solid #000;
+    padding: 6px;
+    margin: 8px 0;
+    font-size: 10.5px;
+    line-height: 1.4;
+    text-align: justify;
+  }
+  .star-divider {
+    text-align: center;
+    font-size: 10px;
+    margin: 10px 0;
+    letter-spacing: 2px;
+  }
+  .chart-img {
+    width: 100%;
+    margin: 10px 0;
+    border: 1px solid #000;
+  }
+  pre {
+    white-space: pre-wrap;
+    font-family: inherit;
+    font-size: 10.5px;
+    border-left: 2px solid #000;
+    padding-left: 8px;
+    margin: 8px 0;
+  }
+  .barcode {
+    font-family: 'Libre Barcode 39', cursive; /* Fallback to text if font not loaded */
+    font-size: 30px;
+    margin-top: 15px;
+    text-align: center;
+  }
+  .barcode-text {
+    font-size: 8px;
+    text-align: center;
+    letter-spacing: 3px;
+    margin-top: -5px;
+  }
+  
+  @media print {
+    body { background: transparent; padding: 0; }
+    .receipt { box-shadow: none; width: 80mm; margin: 0; }
+    button { display: none; }
+    .receipt::before, .receipt::after { display: none; }
+  }
+
+  button {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    padding: 10px 20px;
+    background: #000;
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: inherit;
+    z-index: 100;
+  }
+</style>
+</head>
+<body>
+
+<div class="receipt">
+  <div class="center">
+    <div class="logo">M I N T</div>
+    <div class="sub">--- ALGO TRADING TERMINAL ---</div>
+    <div class="sub">ID: ${Math.floor(Math.random() * 900000 + 100000)}</div>
+  </div>
+
+  <div class="double-dash"></div>
+
+  <div class="row"><span class="lbl">DATE:</span><span>${dateStr}</span></div>
+  <div class="row"><span class="lbl">TIME:</span><span>${timeStr}</span></div>
+  <div class="row"><span class="lbl">PAIR:</span><span class="bold">${SYMBOL}</span></div>
+  <div class="row"><span class="lbl">TIME FRAME:</span><span>${INTERVAL}</span></div>
+
+  <div class="dash"></div>
+
+  <div class="star-divider">* * * MARKET SNAPSHOT * * *</div>
+
+  <div class="row"><span class="lbl">LAST PRICE:</span><span class="bold">${closeP}</span></div>
+  <div class="row"><span class="lbl">DIRECTION:</span><span class="bold">${trend}</span></div>
+  <div class="row"><span class="lbl">ATR STATUS:</span><span>${lastCyc ? (lastCyc.state === 1 ? 'BULLISH' : 'BEARISH') : 'NEUTRAL'}</span></div>
+
+  <img class="chart-img" src="${chartImgData}" />
+  <div class="center sub" style="font-size:7px; margin-top:-5px;">VISUAL CHART DATA SNAPSHOT</div>
+
+  ${verdictText ? `
+  <div class="star-divider">* * * ALGO VERDICT * * *</div>
+  <div class="verdict-box">${verdictText}</div>
+  ` : ''}
+
+  <div class="dash"></div>
+
+  <div class="star-divider">* * * STRUCTURAL ANALYSIS * * *</div>
+
+  <div class="row"><span class="lbl">VSR RANGE:</span><span>${vsrLine}</span></div>
+  <div class="row"><span class="lbl">CURRENT POS:</span><span class="bold">${vsrPos}</span></div>
+  <div class="row"><span class="lbl">ORDER FLOW:</span><span style="font-size:10px">${vsrNear && lastBar
+                    ? (lastBar.close > vsrNear.upper ? 'BREAKOUT UP' : lastBar.close < vsrNear.lower ? 'BREAKOUT DOWN' : 'RANGE BOUND')
+                    : 'UNCERTAIN'
+                }</span></div>
+
+  <div class="dash"></div>
+
+  <div class="star-divider">* * * FVG LIQUIDITY * * *</div>
+  ${openFVGs.length === 0
+                    ? '<div class="center sub">NO ACTIVE FVG GAPS</div>'
+                    : openFVGs.map((f, i) => `<div class="row"><span class="lbl">GAP-${i + 1} ${f.dir}:</span><span>${pf(f.bottom)} - ${pf(f.top)}</span></div>`).join('')
+                }
+
+  ${trades.length > 0 ? `
+  <div class="dash"></div>
+  <div class="star-divider">* * * TRADE EXECUTION * * *</div>
+  <div class="sub center">LEV: 20X | MARGIN: 100 USDT</div>
+  <div class="dash"></div>
+  <pre>${tradeLines}</pre>
+  ` : ''}
+
+  <div class="dash"></div>
+  <div class="star-divider">* * * MANUAL EXECUTION LOG * * *</div>
+  <table style="width: 100%; border-collapse: collapse; margin-top: 5px; border: 1px solid #000;">
+    <thead>
+      <tr>
+        <th style="border: 1px solid #000; padding: 4px; font-size: 9px; text-align: center; width: 33.33%;">ENTRY</th>
+        <th style="border: 1px solid #000; padding: 4px; font-size: 9px; text-align: center; width: 33.33%;">TP</th>
+        <th style="border: 1px solid #000; padding: 4px; font-size: 9px; text-align: center; width: 33.33%;">SL</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td style="border: 1px solid #000; height: 35px;"></td>
+        <td style="border: 1px solid #000; height: 35px;"></td>
+        <td style="border: 1px solid #000; height: 35px;"></td>
+      </tr>
+      <tr>
+        <td colspan="3" style="border: 1px solid #000; padding: 4px; font-size: 9px; height: 30px;">STATUS:</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="double-dash"></div>
+
+
+  <div class="center" style="margin-top: 15px;">
+    <div style="font-size: 10px; margin-bottom: 5px;">SERIAL: MNT-AX-${Date.now().toString().slice(-8)}</div>
+    <div class="barcode">||||| | || |||| | ||| |</div>
+    <div class="barcode-text">${SYMBOL}-${Date.now().toString().slice(-4)}</div>
+  </div>
+
+  <div class="center" style="margin-top: 15px; font-size: 9px; opacity: 0.6;">
+    THE FUTURE IS BOLD. STAY DISCIPLINED.
+    <br>THANK YOU FOR USING MINT TERMINAL
+  </div>
+</div>
+
+<button onclick="window.print()">PRINT RECEIPT</button>
+
+</body>
+</html>`;
+
+
+            const w = window.open('', '_blank', 'width=400,height=700,scrollbars=yes');
+            if (w) { w.document.write(receiptHTML); w.document.close(); }
+        });
+
+
+
+
 
         // ── CHART CONTAINER ─────────────────────────────────────────────────────
+        chartSection.appendChild(toolbar);   // ← toolbar phải append TRƯỚC chartDiv
         const chartDiv = document.createElement("div");
         chartDiv.style.cssText = "position:relative; flex:1; min-height:0;";
         chartSection.appendChild(chartDiv);
+
 
         analyseChartInstance = LightweightCharts.createChart(chartDiv, {
             width: chartDiv.clientWidth,
@@ -782,15 +1093,14 @@ function setupAnalyseTool() {
             refreshTradePanel();
         }
 
-        // ── Click canvas (pointer-events controlled) ────────────────────────────
+        // ── entryClickCanvas: CHỈ dùng để sync size, KHÔNG nhận pointer events ─────
         const entryClickCanvas = document.createElement('canvas');
         entryClickCanvas.style.cssText = 'position:absolute;top:0;left:0;pointer-events:none;z-index:11;';
         chartDiv.appendChild(entryClickCanvas);
 
+        // updateClickCanvasEvents: chỉ cập nhật cursor của chartDiv (không dùng pointer-events)
         function updateClickCanvasEvents() {
-            const need = entryMode || trades.length > 0;
-            entryClickCanvas.style.pointerEvents = need ? 'all' : 'none';
-            entryClickCanvas.style.cursor = entryMode ? 'crosshair' : 'default';
+            chartDiv.style.cursor = entryMode ? 'crosshair' : '';
         }
 
         function setEntryMode(on) {
@@ -822,63 +1132,67 @@ function setupAnalyseTool() {
             return null;
         }
 
-        // ── Pointer events: mousedown / mousemove / mouseup ──────────────────────
-        entryClickCanvas.addEventListener('mousedown', (e) => {
-            const rect = entryClickCanvas.getBoundingClientRect();
+        // ── Event handlers trên chartDiv (không block chart scroll/zoom) ─────────
+        chartDiv.addEventListener('mousemove', (e) => {
+            if (dragging) return; // kéo đang xử lý bởi document listener
+            if (entryMode) { chartDiv.style.cursor = 'crosshair'; return; }
+            const rect = chartDiv.getBoundingClientRect();
             const y = e.clientY - rect.top;
             const hit = hitTest(y);
+            chartDiv.style.cursor = hit ? 'ns-resize' : '';
+        });
+
+        chartDiv.addEventListener('mouseleave', () => {
+            if (!entryMode) chartDiv.style.cursor = '';
+        });
+
+        chartDiv.addEventListener('mousedown', (e) => {
+            if (e.button !== 0) return;
+            const rect = chartDiv.getBoundingClientRect();
+            const y = e.clientY - rect.top;
+            const hit = hitTest(y);
+
             if (hit) {
+                // Bắt đầu drag — dùng document để không bị mất khi ra ngoài chartDiv
                 dragging = hit;
+                e.stopPropagation();
                 e.preventDefault();
+
+                const onMove = (ev) => {
+                    const newPrice = candleSeries2.coordinateToPrice(ev.clientY - chartDiv.getBoundingClientRect().top);
+                    if (newPrice == null) return;
+                    const t = dragging.trade;
+                    if (dragging.handle === 'entry') {
+                        const delta = newPrice - t.entryPrice;
+                        t.entryPrice += delta; t.sl += delta; t.tp += delta;
+                    } else if (dragging.handle === 'sl') {
+                        t.sl = newPrice;
+                        const risk = Math.abs(t.sl - t.entryPrice);
+                        t.tp = t.dir === 'LONG' ? t.entryPrice + 2 * risk : t.entryPrice - 2 * risk;
+                    } else {
+                        t.tp = newPrice;
+                    }
+                    applyTrade(t);
+                };
+                const onUp = () => {
+                    dragging = null;
+                    chartDiv.style.cursor = '';
+                    document.removeEventListener('mousemove', onMove);
+                    document.removeEventListener('mouseup', onUp);
+                };
+                document.addEventListener('mousemove', onMove);
+                document.addEventListener('mouseup', onUp);
                 return;
             }
-            // Không trúng line nào → nếu đang ở entry mode thì đặt lệnh mới
+
+            // Không trúng line → đặt lệnh mới nếu đang ở entry mode
             if (entryMode) {
                 const price = candleSeries2.coordinateToPrice(y);
                 if (price != null) { addTrade(price); setEntryMode(false); }
             }
         });
 
-        entryClickCanvas.addEventListener('mousemove', (e) => {
-            const rect = entryClickCanvas.getBoundingClientRect();
-            const y = e.clientY - rect.top;
 
-            if (dragging) {
-                const newPrice = candleSeries2.coordinateToPrice(y);
-                if (newPrice == null) return;
-                const t = dragging.trade;
-
-                if (dragging.handle === 'entry') {
-                    // Shift toàn bộ (entry + SL + TP cùng delta)
-                    const delta = newPrice - t.entryPrice;
-                    t.entryPrice += delta;
-                    t.sl += delta;
-                    t.tp += delta;
-                } else if (dragging.handle === 'sl') {
-                    // SL mới → tính lại TP 2R
-                    t.sl = newPrice;
-                    const risk = Math.abs(t.sl - t.entryPrice);
-                    t.tp = t.dir === 'LONG' ? t.entryPrice + 2 * risk : t.entryPrice - 2 * risk;
-                } else if (dragging.handle === 'tp') {
-                    // TP tự do (user tự chọn)
-                    t.tp = newPrice;
-                }
-                applyTrade(t);
-                return;
-            }
-
-            // Hover: đổi cursor
-            if (entryMode) {
-                entryClickCanvas.style.cursor = 'crosshair';
-            } else {
-                const hit = hitTest(y);
-                entryClickCanvas.style.cursor = hit ? 'ns-resize' : 'default';
-            }
-        });
-
-        const stopDrag = () => { dragging = null; };
-        entryClickCanvas.addEventListener('mouseup', stopDrag);
-        entryClickCanvas.addEventListener('mouseleave', stopDrag);
 
 
         // Rewire bot1 & bot2 toggles (b2t1s / b2t2s now available)
@@ -911,8 +1225,9 @@ function setupAnalyseTool() {
         }
 
         // ── DRAW FUNCTION ────────────────────────────────────────────────────────
-        function drawOverlayCanvas() {
+        function drawOverlayCanvas(opts = {}) {
             if (!analyseChartInstance) return;
+            const printMode = opts.printMode || false;
             const chartW = chartDiv.clientWidth;
             const chartH = Math.max(1, chartDiv.clientHeight - 26);
             overlayCanvas.width = chartW;
@@ -940,10 +1255,10 @@ function setupAnalyseTool() {
                     const y2 = candleSeries2.priceToCoordinate(z.lower);
                     if (y1 === null || y2 === null) continue;
                     const topY = Math.min(y1, y2), botY = Math.max(y1, y2);
-                    oc.fillStyle = "rgba(255,235,59,0.12)";
+                    oc.fillStyle = printMode ? "rgba(0,0,0,0.1)" : "rgba(255,235,59,0.12)";
                     oc.fillRect(xL, topY, zW, botY - topY);
-                    oc.strokeStyle = "rgba(255,235,59,0.5)";
-                    oc.lineWidth = 1; oc.setLineDash([]);
+                    oc.strokeStyle = printMode ? "rgba(0,0,0,0.6)" : "rgba(255,235,59,0.5)";
+                    oc.lineWidth = printMode ? 2 : 1; oc.setLineDash([]);
                     oc.beginPath();
                     oc.moveTo(xL, topY); oc.lineTo(xR, topY);
                     oc.moveTo(xL, botY); oc.lineTo(xR, botY);
@@ -972,7 +1287,11 @@ function setupAnalyseTool() {
                             if (x !== null && y !== null) oc.lineTo(x, y);
                         }
                         oc.closePath();
-                        oc.fillStyle = cyc.state === 1 ? 'rgba(0,230,118,0.18)' : 'rgba(255,82,82,0.18)';
+                        if (printMode) {
+                            oc.fillStyle = cyc.state === 1 ? 'rgba(0,0,0,0.12)' : 'rgba(0,0,0,0.25)';
+                        } else {
+                            oc.fillStyle = cyc.state === 1 ? 'rgba(0,230,118,0.18)' : 'rgba(255,82,82,0.18)';
+                        }
                         oc.fill();
                     }
                     // Chỉ fill, KHÔNG vẽ trail lines
@@ -992,10 +1311,11 @@ function setupAnalyseTool() {
                     const y2 = candleSeries2.priceToCoordinate(z.lower);
                     if (y1 === null || y2 === null) continue;
                     const topY = Math.min(y1, y2), botY = Math.max(y1, y2);
-                    oc.fillStyle = 'rgba(255,235,59,0.1)';
+                    oc.fillStyle = printMode ? 'rgba(0,0,0,0.08)' : 'rgba(255,235,59,0.1)';
                     oc.fillRect(xL, topY, zW, botY - topY);
-                    oc.strokeStyle = 'rgba(255,235,59,0.45)';
-                    oc.lineWidth = 1; oc.setLineDash([4, 4]);
+                    oc.strokeStyle = printMode ? 'rgba(0,0,0,0.5)' : 'rgba(255,235,59,0.45)';
+                    oc.lineWidth = printMode ? 2 : 1;
+                    oc.setLineDash(printMode ? [] : [4, 4]);
                     oc.beginPath();
                     oc.moveTo(xL, topY); oc.lineTo(xR, topY);
                     oc.moveTo(xL, botY); oc.lineTo(xR, botY);
@@ -1020,20 +1340,28 @@ function setupAnalyseTool() {
                     const isBuyDom = r.buyVol >= r.sellVol;
                     const inVA = r.inVA;
                     if (sellW > 0) {
-                        oc.fillStyle = isBuyDom
-                            ? (inVA ? "rgba(23,72,111,0.85)" : "rgba(23,72,111,0.35)")
-                            : (inVA ? "rgba(130,60,0,0.85)" : "rgba(130,60,0,0.35)");
+                        if (printMode) {
+                            oc.fillStyle = inVA ? "rgba(0,0,0,0.4)" : "rgba(0,0,0,0.15)";
+                        } else {
+                            oc.fillStyle = isBuyDom
+                                ? (inVA ? "rgba(23,72,111,0.85)" : "rgba(23,72,111,0.35)")
+                                : (inVA ? "rgba(130,60,0,0.85)" : "rgba(130,60,0,0.35)");
+                        }
                         oc.fillRect(xLeft, topY, sellW, rowH);
                     }
                     if (buyW > 0) {
-                        oc.fillStyle = isBuyDom
-                            ? (inVA ? "rgba(22,112,175,0.95)" : "rgba(22,112,175,0.4)")
-                            : (inVA ? "rgba(183,110,0,0.95)" : "rgba(183,110,0,0.4)");
+                        if (printMode) {
+                            oc.fillStyle = inVA ? "rgba(0,0,0,0.6)" : "rgba(0,0,0,0.25)";
+                        } else {
+                            oc.fillStyle = isBuyDom
+                                ? (inVA ? "rgba(43,158,118,0.85)" : "rgba(43,158,118,0.35)")
+                                : (inVA ? "rgba(76,175,80,0.85)" : "rgba(76,175,80,0.35)");
+                        }
                         oc.fillRect(xLeft + sellW, topY, buyW, rowH);
                     }
                     if (r.poc) {
-                        oc.strokeStyle = vpData.pocDelta >= 0 ? "rgba(76,175,80,1)" : "rgba(255,82,82,1)";
-                        oc.lineWidth = 2; oc.setLineDash([]);
+                        oc.strokeStyle = printMode ? "#000" : (vpData.pocDelta >= 0 ? "rgba(76,175,80,1)" : "rgba(255,82,82,1)");
+                        oc.lineWidth = printMode ? 2.5 : 2; oc.setLineDash([]);
                         oc.beginPath();
                         oc.moveTo(xLeft - 2, topY + rowH / 2);
                         oc.lineTo(xLeft + totalW + 2, topY + rowH / 2);
@@ -1044,15 +1372,20 @@ function setupAnalyseTool() {
                     const yCo = candleSeries2.priceToCoordinate(price);
                     if (yCo === null) return;
                     const lineEnd = xLeft + maxBarW + 10;
-                    oc.setLineDash([4, 4]); oc.strokeStyle = color; oc.lineWidth = 1;
+                    oc.setLineDash([4, 4]);
+                    oc.strokeStyle = printMode ? "#000" : color;
+                    oc.lineWidth = printMode ? 2 : 1;
                     oc.beginPath(); oc.moveTo(xLeft, yCo); oc.lineTo(lineEnd, yCo); oc.stroke();
                     oc.setLineDash([]);
-                    oc.fillStyle = color; oc.font = "10px Outfit, sans-serif"; oc.textAlign = "left";
+                    oc.fillStyle = printMode ? "#000" : color;
+                    oc.font = (printMode ? "bold " : "") + "10px Outfit, sans-serif";
+                    oc.textAlign = "left";
                     oc.fillText(label, lineEnd + 4, yCo + labelOffset);
                 };
                 if (vpData.vahPrice != null) drawHLine(vpData.vahPrice, "rgba(33,150,243,0.9)", "VAH", -3);
                 if (vpData.valPrice != null) drawHLine(vpData.valPrice, "rgba(255,193,7,0.9)", "VAL", 11);
             }
+
 
             // ── Pass 3: FVG (Fair Value Gap / Imbalance) ─────────────────────────
             if (amShowFVG && fvgList.length) {
@@ -1129,10 +1462,13 @@ function setupAnalyseTool() {
             try { analyseChartInstance.remove(); } catch (e) { }
             analyseChartInstance = null;
         }
+        // Vẽ lại overlay chart chính ngay lập tức (không cần chờ di chuột)
+        requestAnimationFrame(() => { if (typeof drawOverlay === 'function') drawOverlay(); });
         if (analyseModeActive) {
             analyseModeActive = false;
             syncSidebarFromState();
         }
+
     }
 
 
@@ -1173,6 +1509,7 @@ function setupAnalyseTool() {
         analyseModeActive = false;
         wrapper.style.cursor = 'default';
         syncSidebarFromState();
+
 
     }, true);
 }

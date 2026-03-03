@@ -96,6 +96,10 @@ function initChart() {
   chart.timeScale().subscribeVisibleLogicalRangeChange(() => {
     requestAnimationFrame(drawOverlay);
   });
+  // Overlay cần vẽ lại cả khi range không thay đổi (vd: sau khi modal đóng)
+  chart.subscribeCrosshairMove(() => {
+    requestAnimationFrame(drawOverlay);
+  });
 }
 
 function syncCanvasSize() {
@@ -221,8 +225,8 @@ function drawOverlay() {
         ctx.lineWidth = 1; ctx.fillRect(xS, yH, cW, yL - yH); ctx.strokeRect(xS, yH, cW, yL - yH);
         if ((hasHover || isSel) && !vpCreateState.active) {
           ctx.fillStyle = "#C3C6CE"; ctx.strokeStyle = "#0B0B0E"; let hs = 6;
-          ctx.fillRect(xS - hs/2, (yH+yL)/2 - hs/2, hs, hs); ctx.strokeRect(xS - hs/2, (yH+yL)/2 - hs/2, hs, hs);
-          ctx.fillRect(xE - hs/2, (yH+yL)/2 - hs/2, hs, hs); ctx.strokeRect(xE - hs/2, (yH+yL)/2 - hs/2, hs, hs);
+          ctx.fillRect(xS - hs / 2, (yH + yL) / 2 - hs / 2, hs, hs); ctx.strokeRect(xS - hs / 2, (yH + yL) / 2 - hs / 2, hs, hs);
+          ctx.fillRect(xE - hs / 2, (yH + yL) / 2 - hs / 2, hs, hs); ctx.strokeRect(xE - hs / 2, (yH + yL) / 2 - hs / 2, hs, hs);
         }
       }
     }
@@ -233,7 +237,7 @@ function drawOverlay() {
     if (yVAH !== null && yVAL !== null) {
       let tY = Math.min(yVAH, yVAL), bY = Math.max(yVAH, yVAL);
       ctx.fillStyle = "rgba(41, 98, 255, 0.05)"; ctx.fillRect(xS, tY, cW, bY - tY);
-      ctx.setLineDash([4,4]); ctx.lineWidth = 1; ctx.strokeStyle = "rgba(33, 150, 243, 0.8)";
+      ctx.setLineDash([4, 4]); ctx.lineWidth = 1; ctx.strokeStyle = "rgba(33, 150, 243, 0.8)";
       ctx.beginPath(); ctx.moveTo(xS, tY); ctx.lineTo(xE, tY); ctx.stroke();
       ctx.strokeStyle = "rgba(255, 193, 7, 0.8)"; ctx.beginPath(); ctx.moveTo(xS, bY); ctx.lineTo(xE, bY); ctx.stroke();
       ctx.setLineDash([]);
@@ -273,26 +277,26 @@ function drawOverlay() {
       if ((isH || isS) && !rectCreateState.active) {
         ctx.fillStyle = "#C3C6CE"; ctx.strokeStyle = "#0B0B0E"; ctx.lineWidth = 1; let hs = 6;
         let corners = [{ cx: rx, cy: ry }, { cx: rx + rw, cy: ry }, { cx: rx, cy: ry + rh }, { cx: rx + rw, cy: ry + rh }];
-        for (let c of corners) { ctx.fillRect(c.cx - hs/2, c.cy - hs/2, hs, hs); ctx.strokeRect(c.cx - hs/2, c.cy - hs/2, hs, hs); }
+        for (let c of corners) { ctx.fillRect(c.cx - hs / 2, c.cy - hs / 2, hs, hs); ctx.strokeRect(c.cx - hs / 2, c.cy - hs / 2, hs, hs); }
       }
     }
   }
 
   // Pass 4: Measure
   if (measureState.step > 0 && measureState.startIdx !== null && measureState.endIdx !== null && globalBars && globalBars.length) {
-    let csI = Math.max(0, Math.min(globalBars.length-1, Math.min(measureState.startIdx, measureState.endIdx)));
-    let ceI = Math.max(0, Math.min(globalBars.length-1, Math.max(measureState.startIdx, measureState.endIdx)));
+    let csI = Math.max(0, Math.min(globalBars.length - 1, Math.min(measureState.startIdx, measureState.endIdx)));
+    let ceI = Math.max(0, Math.min(globalBars.length - 1, Math.max(measureState.startIdx, measureState.endIdx)));
     let enB = globalBars[csI], exB = globalBars[ceI], side = exB.close >= enB.close ? "LONG" : "SHORT";
     let enP = enB.close, exP = exB.close, margin = 100, leverage = 20, pnl = 0, maxP = 0;
-    if (side === "LONG") { pnl = margin * leverage * ((exP - enP)/enP); let h = -Infinity; for (let i=csI; i<=ceI; i++) h = Math.max(h, globalBars[i].high); maxP = margin*leverage*((h-enP)/enP); }
-    else { pnl = margin * leverage * ((enP - exP)/enP); let l = Infinity; for (let i=csI; i<=ceI; i++) l = Math.min(l, globalBars[i].low); maxP = margin*leverage*((enP-l)/enP); }
-    let bC = ceI - csI, tS = exB.time - enB.time, d = Math.floor(tS/86400), h = Math.floor((tS%86400)/3600), m = Math.floor((tS%3600)/60), tStr = (d > 0 ? d + "d " : "") + (h > 0 ? h + "h " : "") + m + "m";
+    if (side === "LONG") { pnl = margin * leverage * ((exP - enP) / enP); let h = -Infinity; for (let i = csI; i <= ceI; i++) h = Math.max(h, globalBars[i].high); maxP = margin * leverage * ((h - enP) / enP); }
+    else { pnl = margin * leverage * ((enP - exP) / enP); let l = Infinity; for (let i = csI; i <= ceI; i++) l = Math.min(l, globalBars[i].low); maxP = margin * leverage * ((enP - l) / enP); }
+    let bC = ceI - csI, tS = exB.time - enB.time, d = Math.floor(tS / 86400), h = Math.floor((tS % 86400) / 3600), m = Math.floor((tS % 3600) / 60), tStr = (d > 0 ? d + "d " : "") + (h > 0 ? h + "h " : "") + m + "m";
     let x1 = timeScale.logicalToCoordinate(csI), x2 = timeScale.logicalToCoordinate(ceI), y1 = candleSeries.priceToCoordinate(enP), y2 = candleSeries.priceToCoordinate(exP);
     if (x1 !== null && x2 !== null && y1 !== null && y2 !== null) {
       ctx.save(); let fC = side === "LONG" ? "rgba(0,230,118,0.2)" : "rgba(255,82,82,0.2)", sC = side === "LONG" ? "rgba(0,230,118,0.8)" : "rgba(255,82,82,0.8)";
-      ctx.fillStyle = fC; let rX = Math.min(x1, x2), rW = Math.max(1, Math.abs(x2-x1)), rY = Math.min(y1, y2), rH = Math.abs(y2-y1);
+      ctx.fillStyle = fC; let rX = Math.min(x1, x2), rW = Math.max(1, Math.abs(x2 - x1)), rY = Math.min(y1, y2), rH = Math.abs(y2 - y1);
       ctx.fillRect(rX, rY, rW, rH); ctx.strokeStyle = sC; ctx.lineWidth = 1; ctx.strokeRect(rX, rY, rW, rH);
-      let bW = 200, bH = 165, bX = Math.max(x1, x2) + 15, bY = y2 - bH/2;
+      let bW = 200, bH = 165, bX = Math.max(x1, x2) + 15, bY = y2 - bH / 2;
       if (bX + bW > canvas.width) bX = Math.min(x1, x2) - bW - 15; if (bY < 10) bY = 10; if (bY + bH > canvas.height - 10) bY = canvas.height - bH - 10;
       ctx.fillStyle = "rgba(17,17,24,0.95)"; ctx.shadowColor = "rgba(0,0,0,0.5)"; ctx.shadowBlur = 10;
       if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(bX, bY, bW, bH, 8); ctx.fill(); ctx.shadowBlur = 0; ctx.strokeStyle = "#1f2933"; ctx.stroke(); }
@@ -301,7 +305,7 @@ function drawOverlay() {
       let tX = bX + 12, tY = bY + 12, lH = 20;
       ctx.fillStyle = side === "LONG" ? "#00E676" : "#FF5252"; ctx.fillText(`Side: ${side} (100u x20)`, tX, tY); tY += lH;
       ctx.fillStyle = "#C3C6CE"; ctx.fillText(`Entry: ${enP.toFixed(4)}`, tX, tY); tY += lH; ctx.fillText(`Exit:  ${exP.toFixed(4)}`, tX, tY); tY += lH;
-      let mR = (maxP/margin)*100, roe = (pnl/margin)*100;
+      let mR = (maxP / margin) * 100, roe = (pnl / margin) * 100;
       ctx.fillStyle = maxP >= 0 ? "#00E676" : "#FF5252"; ctx.fillText(`Max PnL: ${maxP > 0 ? "+" : ""}${maxP.toFixed(2)} USDT (${mR > 0 ? "+" : ""}${mR.toFixed(2)}%)`, tX, tY); tY += lH;
       ctx.fillStyle = pnl >= 0 ? "#00E676" : "#FF5252"; ctx.fillText(`PnL: ${pnl > 0 ? "+" : ""}${pnl.toFixed(2)} USDT (${roe > 0 ? "+" : ""}${roe.toFixed(2)}%)`, tX, tY); tY += lH;
       ctx.fillStyle = "#C3C6CE"; ctx.fillText(`Time: ${tStr}`, tX, tY); tY += lH; ctx.fillText(`Bars: ${bC}`, tX, tY); ctx.restore();
