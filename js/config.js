@@ -1,20 +1,41 @@
 // === Reactive Config (dynamic, changes when user switches symbol/interval) ===
 let SYMBOL = "";
 let INTERVAL = "15m";
-const LIMIT = 50000;
+const DEFAULT_BAR_LIMIT = 50000;
+const MIN_BAR_LIMIT = 500;
+const MAX_BAR_LIMIT = 50000;
+
+function getStoredNumber(key, fallback, min, max) {
+  const value = Number(localStorage.getItem(key));
+  return Number.isFinite(value) && value >= min && value <= max ? value : fallback;
+}
+
+function getStoredMaType(key) {
+  return localStorage.getItem(key) === "vidya" ? "vidya" : "ema";
+}
+
+let LIMIT = getStoredNumber("stat1_barLimit", DEFAULT_BAR_LIMIT, MIN_BAR_LIMIT, MAX_BAR_LIMIT);
 
 // ATR Bot Settings
-const ATR_LENGTH = 10;
-const EMA_LENGTH = 21;
-const ATR_MULT = 1.618;
+let ATR_LENGTH = getStoredNumber("stat1_atrLength", 10, 1, 500);
+let EMA_LENGTH = getStoredNumber("stat1_emaLength", 21, 1, 500);
+let ATR_MULT = getStoredNumber("stat1_atrMultiplier", 1.618, 0.001, 100);
+let MA_TYPE = getStoredMaType("stat1_atrMaType");
+let ATR2_LENGTH = getStoredNumber("stat1_atr2Length", 10, 1, 500);
+let ATR2_EMA_LENGTH = getStoredNumber("stat1_atr2EmaLength", 14, 1, 500);
+let ATR2_MULT = getStoredNumber("stat1_atr2Multiplier", 1, 0.001, 100);
+let ATR2_MA_TYPE = getStoredMaType("stat1_atr2MaType");
 
 // VP Settings
-const NUM_ROWS = 24;
-const VA_PCT = 70;
+let NUM_ROWS = getStoredNumber("stat1_vpRows", 24, 4, 200);
+let VA_PCT = getStoredNumber("stat1_vpValueArea", 70, 1, 100);
 
 // VSR Settings
-const VSR_LENGTH = 20;
-const VSR_THRESHOLD = 10.0;
+let VSR_LENGTH = getStoredNumber("stat1_vsrLength", 20, 1, 500);
+let VSR_THRESHOLD = getStoredNumber("stat1_vsrThreshold", 10, 0.01, 1000);
+let VWAP_ANCHOR = ["day", "week", "month"].includes(localStorage.getItem("stat1_vwapAnchor"))
+  ? localStorage.getItem("stat1_vwapAnchor")
+  : "day";
 
 let chart, candleSeries, t1Series, t2Series, t1Series2, t2Series2;
 let canvas, ctx;

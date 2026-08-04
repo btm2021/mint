@@ -460,8 +460,8 @@ function setupAnalyseTool() {
         }
 
         // bot1 / bot2 toggles rewired after series creation (see block below)
-        toolbar.appendChild(makeToggle("bot1", `ATRBot 1 (${ATR_LENGTH}/${EMA_LENGTH}/${ATR_MULT})`, amShowBot1, "#00E676", "#FF5252", () => { }));
-        toolbar.appendChild(makeToggle("bot2", "ATRBot 2 (10/14/1.0)", amShowBot2, "#00BCD4", "#FF9800", () => { }));
+        toolbar.appendChild(makeToggle("bot1", `ATRBot 1 (${MA_TYPE.toUpperCase()} ${ATR_LENGTH}/${EMA_LENGTH}/${ATR_MULT})`, amShowBot1, "#00E676", "#FF5252", () => { }));
+        toolbar.appendChild(makeToggle("bot2", `ATRBot 2 (${ATR2_MA_TYPE.toUpperCase()} ${ATR2_LENGTH}/${ATR2_EMA_LENGTH}/${ATR2_MULT})`, amShowBot2, "#00BCD4", "#FF9800", () => { }));
         toolbar.appendChild(makeToggle("vsr", "VSR", amShowVSR, "#FFEB3B", null, v => { amShowVSR = v; localStorage.setItem("am_showVSR", v ? "1" : "0"); }));
         toolbar.appendChild(makeToggle("vp", "Volume Profile", amShowVP, "#5B8CFF", null, v => { amShowVP = v; localStorage.setItem("am_showVP", v ? "1" : "0"); }));
         toolbar.appendChild(makeToggle("fvg", "FVG", amShowFVG, "#A78BFA", null, v => { amShowFVG = v; localStorage.setItem("am_showFVG", v ? "1" : "0"); }));

@@ -28,7 +28,7 @@ function getStartSymbol() {
   return "BTCUSDT";
 }
 
-function setupSymbolSearch() {
+function setupSymbolSearchOld() {
   const input = document.getElementById("symbol-input");
   const dropdown = document.getElementById("symbol-dropdown");
   const cachedSet = getCachedSymbolsList();
@@ -102,14 +102,86 @@ function setupSymbolSearch() {
   });
 }
 
+function setupSymbolSearch() {
+  const input = document.getElementById("symbol-input");
+  const modal = document.getElementById("symbol-modal");
+  const modalInput = document.getElementById("symbol-modal-input");
+  const results = document.getElementById("symbol-modal-results");
+  const cachedOnly = document.getElementById("symbol-filter-cached");
+  const resultCount = document.getElementById("symbol-result-count");
+  const closeBtn = document.getElementById("symbol-modal-close");
+  let selectedIndex = 0;
+
+  function renderResults(query) {
+    const cachedSet = getCachedSymbolsList();
+    const q = query.trim().toUpperCase();
+    let filtered = q ? allSymbols.filter((s) => s.includes(q)) : [...allSymbols];
+    if (cachedOnly.checked) filtered = filtered.filter((s) => cachedSet.has(s));
+    filtered.sort((a, b) => (cachedSet.has(a) === cachedSet.has(b) ? a.localeCompare(b) : cachedSet.has(a) ? -1 : 1));
+
+    const top = filtered.slice(0, 100);
+    selectedIndex = Math.min(selectedIndex, Math.max(0, top.length - 1));
+    resultCount.textContent = `${filtered.length.toLocaleString()} markets`;
+    results.innerHTML = top.length ? top.map((sym, index) => {
+      const badge = cachedSet.has(sym) ? `<span class="sym-badge cached">CACHED</span>` : "";
+      return `<button class="symbol-result${index === selectedIndex ? " active" : ""}" type="button" data-sym="${sym}" data-index="${index}"><span class="sym-name">${sym}</span>${badge}</button>`;
+    }).join("") : `<div class="symbol-empty">No matching markets</div>`;
+
+    results.querySelectorAll(".symbol-result").forEach((el) => {
+      el.addEventListener("click", () => selectSymbol(el.dataset.sym));
+    });
+  }
+
+  function openModal(seed = input.value) {
+    modalInput.value = seed;
+    selectedIndex = 0;
+    renderResults(seed);
+    modal.hidden = false;
+    document.body.classList.add("modal-open");
+    requestAnimationFrame(() => modalInput.focus());
+  }
+
+  function closeModal() {
+    modal.hidden = true;
+    document.body.classList.remove("modal-open");
+  }
+
+  input.addEventListener("click", () => openModal(input.value));
+  input.addEventListener("focus", () => openModal(input.value));
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === "ArrowDown") { e.preventDefault(); openModal(input.value); }
+  });
+  modalInput.addEventListener("input", () => { selectedIndex = 0; renderResults(modalInput.value); });
+  cachedOnly.addEventListener("change", () => { selectedIndex = 0; renderResults(modalInput.value); });
+  modalInput.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      closeModal();
+    } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      const options = results.querySelectorAll(".symbol-result");
+      if (!options.length) return;
+      e.preventDefault();
+      selectedIndex = (selectedIndex + (e.key === "ArrowDown" ? 1 : -1) + options.length) % options.length;
+      renderResults(modalInput.value);
+      results.querySelector(`.symbol-result[data-index="${selectedIndex}"]`)?.scrollIntoView({ block: "nearest" });
+    } else if (e.key === "Enter") {
+      const selected = results.querySelector(`.symbol-result[data-index="${selectedIndex}"]`);
+      if (selected) selectSymbol(selected.dataset.sym);
+    }
+  });
+  closeBtn.addEventListener("click", closeModal);
+  modal.addEventListener("click", (e) => { if (e.target === modal) closeModal(); });
+}
+
 async function selectSymbol(sym) {
   if (!sym || sym === SYMBOL) {
-    document.getElementById("symbol-dropdown").classList.remove("open");
+    document.getElementById("symbol-modal").hidden = true;
+    document.body.classList.remove("modal-open");
     return;
   }
   SYMBOL = sym;
   document.getElementById("symbol-input").value = sym;
-  document.getElementById("symbol-dropdown").classList.remove("open");
+  document.getElementById("symbol-modal").hidden = true;
+  document.body.classList.remove("modal-open");
   localStorage.setItem("stat1_lastSymbol", sym);
 
   setStatus("loading", `Loading ${sym}...`);
@@ -119,6 +191,7 @@ async function selectSymbol(sym) {
   }
   await loadSymbol();
   setupTickerWS(sym);
+  setupRealtimeWS();
 }
 
 function getPriceFormat(priceValue) {
@@ -169,6 +242,7 @@ function setupIntervalPills() {
       if (SYMBOL) {
         setStatus("loading", `Loading ${SYMBOL} ${iv}...`);
         await loadSymbol();
+        setupRealtimeWS();
       }
     });
   });
@@ -190,8 +264,182 @@ function setupSettingsPanel() {
   btn.addEventListener("click", (e) => { e.stopPropagation(); togglePanel(); });
   closeBtn.addEventListener("click", () => togglePanel(false));
   document.addEventListener("click", (e) => {
+    if (e.target.closest("#indicator-config-modal")) return;
     if (!e.target.closest("#settings-panel") && !e.target.closest("#settings-btn")) togglePanel(false);
   });
+}
+
+function setupChartSettingsOld() {
+  const fields = {
+    atrLength: document.getElementById("setting-atr-length"),
+    emaLength: document.getElementById("setting-ema-length"),
+    atrMultiplier: document.getElementById("setting-atr-multiplier"),
+    barLimit: document.getElementById("setting-bar-limit"),
+  };
+  fields.atrLength.value = ATR_LENGTH;
+  fields.emaLength.value = EMA_LENGTH;
+  fields.atrMultiplier.value = ATR_MULT;
+  fields.barLimit.value = LIMIT;
+
+  function readField(field, current, min, max, integer = true) {
+    const value = Number(field.value);
+    if (!Number.isFinite(value) || value < min || value > max) {
+      field.value = current;
+      return current;
+    }
+    const result = integer ? Math.round(value) : value;
+    field.value = result;
+    return result;
+  }
+
+  async function applySettings() {
+    const nextAtrLength = readField(fields.atrLength, ATR_LENGTH, 1, 500);
+    const nextEmaLength = readField(fields.emaLength, EMA_LENGTH, 1, 500);
+    const nextMultiplier = readField(fields.atrMultiplier, ATR_MULT, 0.001, 100, false);
+    const nextBarLimit = readField(fields.barLimit, LIMIT, MIN_BAR_LIMIT, MAX_BAR_LIMIT);
+    const changed = nextAtrLength !== ATR_LENGTH || nextEmaLength !== EMA_LENGTH || nextMultiplier !== ATR_MULT || nextBarLimit !== LIMIT;
+    ATR_LENGTH = nextAtrLength;
+    EMA_LENGTH = nextEmaLength;
+    ATR_MULT = nextMultiplier;
+    LIMIT = nextBarLimit;
+    localStorage.setItem("stat1_atrLength", ATR_LENGTH);
+    localStorage.setItem("stat1_emaLength", EMA_LENGTH);
+    localStorage.setItem("stat1_atrMultiplier", ATR_MULT);
+    localStorage.setItem("stat1_barLimit", LIMIT);
+    if (changed && SYMBOL) {
+      setStatus("loading", `Applying settings to ${SYMBOL}...`);
+      await loadSymbol();
+    }
+  }
+
+  document.getElementById("apply-chart-settings").addEventListener("click", applySettings);
+  Object.values(fields).forEach((field) => field.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") applySettings();
+  }));
+}
+
+function setupIndicatorSettings() {
+  const modal = document.getElementById("indicator-config-modal");
+  const title = document.getElementById("indicator-config-title");
+  const form = document.getElementById("indicator-config-form");
+  const closeBtn = document.getElementById("indicator-config-close");
+  const cancelBtn = document.getElementById("indicator-config-cancel");
+  const applyBtn = document.getElementById("indicator-config-apply");
+  let currentIndicator = null;
+
+  const configs = {
+    atr1: { title: "ATR Bot 1", fields: [
+      { key: "maType", label: "MA type", type: "select", options: [["ema", "EMA"], ["vidya", "VIDYA"]], value: () => MA_TYPE },
+      { key: "atrLength", label: "ATR length", type: "number", min: 1, max: 500, step: 1, value: () => ATR_LENGTH },
+      { key: "emaLength", label: "EMA length", type: "number", min: 1, max: 500, step: 1, value: () => EMA_LENGTH },
+      { key: "multiplier", label: "Multiplier", type: "number", min: 0.001, max: 100, step: 0.001, value: () => ATR_MULT },
+    ] },
+    atr2: { title: "ATR Bot 2", fields: [
+      { key: "maType", label: "MA type", type: "select", options: [["ema", "EMA"], ["vidya", "VIDYA"]], value: () => ATR2_MA_TYPE },
+      { key: "atrLength", label: "ATR length", type: "number", min: 1, max: 500, step: 1, value: () => ATR2_LENGTH },
+      { key: "emaLength", label: "EMA length", type: "number", min: 1, max: 500, step: 1, value: () => ATR2_EMA_LENGTH },
+      { key: "multiplier", label: "Multiplier", type: "number", min: 0.001, max: 100, step: 0.001, value: () => ATR2_MULT },
+    ] },
+    vsr: { title: "VSR Zones", fields: [
+      { key: "length", label: "Lookback length", type: "number", min: 1, max: 500, step: 1, value: () => VSR_LENGTH },
+      { key: "threshold", label: "Threshold", type: "number", min: 0.01, max: 1000, step: 0.01, value: () => VSR_THRESHOLD },
+    ] },
+    vp: { title: "Volume Profile", fields: [
+      { key: "rows", label: "Price rows", type: "number", min: 4, max: 200, step: 1, value: () => NUM_ROWS },
+      { key: "valueArea", label: "Value area (%)", type: "number", min: 1, max: 100, step: 1, value: () => VA_PCT },
+    ] },
+    vwap: { title: "VWAP", fields: [
+      { key: "anchor", label: "Reset anchor", type: "select", options: [["day", "Daily"], ["week", "Weekly"], ["month", "Monthly"]], value: () => VWAP_ANCHOR },
+    ] },
+    chartData: { title: "Chart data", fields: [
+      { key: "barLimit", label: "Stored candles", type: "number", min: MIN_BAR_LIMIT, max: MAX_BAR_LIMIT, step: 500, value: () => LIMIT },
+    ] },
+  };
+
+  function closeModal() {
+    modal.hidden = true;
+    document.body.classList.remove("modal-open");
+    currentIndicator = null;
+  }
+
+  function openModal(indicator) {
+    const config = configs[indicator];
+    if (!config) return;
+    currentIndicator = indicator;
+    title.textContent = config.title;
+    form.innerHTML = config.fields.map((field) => {
+      if (field.type === "select") {
+        return `<label>${field.label}<select name="${field.key}">${field.options.map(([value, label]) => `<option value="${value}"${value === field.value() ? " selected" : ""}>${label}</option>`).join("")}</select></label>`;
+      }
+      return `<label>${field.label}<input name="${field.key}" type="number" min="${field.min}" max="${field.max}" step="${field.step}" value="${field.value()}" required /></label>`;
+    }).join("");
+    modal.hidden = false;
+    document.body.classList.add("modal-open");
+    requestAnimationFrame(() => form.querySelector("input, select")?.focus());
+  }
+
+  function numberValue(key, min, max, integer = true) {
+    const value = Number(new FormData(form).get(key));
+    if (!Number.isFinite(value) || value < min || value > max) return null;
+    return integer ? Math.round(value) : value;
+  }
+
+  async function applySettings() {
+    if (!currentIndicator) return;
+    const appliedConfig = configs[currentIndicator];
+    if (currentIndicator === "atr1") {
+      const atr = numberValue("atrLength", 1, 500), ema = numberValue("emaLength", 1, 500), mult = numberValue("multiplier", 0.001, 100, false);
+      if (atr === null || ema === null || mult === null) return;
+      MA_TYPE = new FormData(form).get("maType") === "vidya" ? "vidya" : "ema";
+      ATR_LENGTH = atr; EMA_LENGTH = ema; ATR_MULT = mult;
+      localStorage.setItem("stat1_atrMaType", MA_TYPE); localStorage.setItem("stat1_atrLength", atr); localStorage.setItem("stat1_emaLength", ema); localStorage.setItem("stat1_atrMultiplier", mult);
+    } else if (currentIndicator === "atr2") {
+      const atr = numberValue("atrLength", 1, 500), ema = numberValue("emaLength", 1, 500), mult = numberValue("multiplier", 0.001, 100, false);
+      if (atr === null || ema === null || mult === null) return;
+      ATR2_MA_TYPE = new FormData(form).get("maType") === "vidya" ? "vidya" : "ema";
+      ATR2_LENGTH = atr; ATR2_EMA_LENGTH = ema; ATR2_MULT = mult;
+      localStorage.setItem("stat1_atr2MaType", ATR2_MA_TYPE); localStorage.setItem("stat1_atr2Length", atr); localStorage.setItem("stat1_atr2EmaLength", ema); localStorage.setItem("stat1_atr2Multiplier", mult);
+    } else if (currentIndicator === "vsr") {
+      const length = numberValue("length", 1, 500), threshold = numberValue("threshold", 0.01, 1000, false);
+      if (length === null || threshold === null) return;
+      VSR_LENGTH = length; VSR_THRESHOLD = threshold;
+      localStorage.setItem("stat1_vsrLength", length); localStorage.setItem("stat1_vsrThreshold", threshold);
+    } else if (currentIndicator === "vp") {
+      const rows = numberValue("rows", 4, 200), valueArea = numberValue("valueArea", 1, 100);
+      if (rows === null || valueArea === null) return;
+      NUM_ROWS = rows; VA_PCT = valueArea;
+      localStorage.setItem("stat1_vpRows", rows); localStorage.setItem("stat1_vpValueArea", valueArea);
+    } else if (currentIndicator === "vwap") {
+      VWAP_ANCHOR = new FormData(form).get("anchor");
+      localStorage.setItem("stat1_vwapAnchor", VWAP_ANCHOR);
+    } else if (currentIndicator === "chartData") {
+      const barLimit = numberValue("barLimit", MIN_BAR_LIMIT, MAX_BAR_LIMIT);
+      if (barLimit === null) return;
+      LIMIT = barLimit;
+      localStorage.setItem("stat1_barLimit", barLimit);
+    }
+    drawnVpRects.forEach((item) => { delete item.vp; delete item.vpCache; });
+    closeModal();
+    if (SYMBOL) {
+      setStatus("loading", `Applying ${appliedConfig.title}...`);
+      await loadSymbol();
+    }
+  }
+
+  document.querySelectorAll(".indicator-settings-btn[data-indicator]").forEach((button) => {
+    button.addEventListener("click", () => openModal(button.dataset.indicator));
+  });
+  document.getElementById("chart-data-settings-btn").addEventListener("click", () => openModal("chartData"));
+  // Form values stay as a draft. Only the explicit Apply & Load button commits them.
+  form.addEventListener("submit", (event) => event.preventDefault());
+  form.addEventListener("keydown", (event) => { if (event.key === "Enter") event.preventDefault(); });
+  applyBtn.addEventListener("click", applySettings);
+  closeBtn.addEventListener("click", closeModal);
+  cancelBtn.addEventListener("click", closeModal);
+  // Keep draft values stable while the user edits. This dialog only closes through
+  // its explicit controls (or Escape), never through a click in the backdrop.
+  modal.addEventListener("click", (event) => event.stopPropagation());
+  window.addEventListener("keydown", (event) => { if (event.key === "Escape" && !modal.hidden) closeModal(); });
 }
 
 function setupCacheManager() {

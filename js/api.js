@@ -1,14 +1,22 @@
 async function fetchExchangeInfo() {
+  const cached = localStorage.getItem("stat1_symbols");
+  if (cached) {
+    try {
+      const list = JSON.parse(cached);
+      if (Array.isArray(list) && list.length > 0) {
+        return list.map((item) => typeof item === "string" ? item : item.symbol).filter(Boolean);
+      }
+    } catch (e) {
+      localStorage.removeItem("stat1_symbols");
+    }
+  }
+
   try {
     const res = await fetch("https://fapi.binance.com/fapi/v1/exchangeInfo");
     const data = await res.json();
     const list = data.symbols
       .filter((s) => s.status === "TRADING" && s.quoteAsset === "USDT")
-      .map((s) => ({
-        symbol: s.symbol,
-        priceScale: s.pricePrecision,
-        minMove: 1 / Math.pow(10, s.pricePrecision),
-      }));
+      .map((s) => s.symbol);
     localStorage.setItem("stat1_symbols", JSON.stringify(list));
     localStorage.setItem("stat1_symbols_ts", Date.now());
     return list;
@@ -42,6 +50,14 @@ async function fetchBinanceData() {
     } catch (e) {
       console.error("Cache parsing error", e);
     }
+  }
+
+  // A market picked from the search modal should be immediately usable offline.
+  // The exchange is only queried when the cache cannot satisfy the requested bar count.
+  if (existingBars.length >= LIMIT) {
+    return existingBars
+      .sort((a, b) => a.time - b.time)
+      .slice(-LIMIT);
   }
 
   const batchSize = 1500;
@@ -150,7 +166,9 @@ async function fetchBinanceData() {
 }
 
 function setupTickerWS() {
+  if (window._tickerWS) window._tickerWS.close();
   const ws = new WebSocket(`wss://fstream.binance.com/ws/${SYMBOL.toLowerCase()}@ticker`);
+  window._tickerWS = ws;
   ws.onmessage = (e) => {
     const d = JSON.parse(e.data);
     const priceText = document.getElementById("ticker-price");
@@ -176,7 +194,9 @@ function setupTickerWS() {
 }
 
 function setupRealtimeWS() {
+  if (window._realtimeWS) window._realtimeWS.close();
   const ws = new WebSocket(`wss://fstream.binance.com/ws/${SYMBOL.toLowerCase()}@kline_${INTERVAL}`);
+  window._realtimeWS = ws;
   ws.onmessage = (e) => {
     const msg = JSON.parse(e.data);
     const k = msg.k;
@@ -206,20 +226,21 @@ function setupRealtimeWS() {
     }
 
     // Indicators
-    const atr1 = calculateATRBot(globalBars, ATR_LENGTH, EMA_LENGTH, ATR_MULT);
-    const atr2 = calculateATRBot(globalBars, 10, 14, 1.0);
+    const atr1 = calculateATRBot(globalBars, ATR_LENGTH, EMA_LENGTH, ATR_MULT, MA_TYPE);
+    const atr2 = calculateATRBot(globalBars, ATR2_LENGTH, ATR2_EMA_LENGTH, ATR2_MULT, ATR2_MA_TYPE);
     const vsr = calculateVSR(globalBars, VSR_LENGTH, VSR_THRESHOLD);
-    const vwap = calculateStandardVWAP(globalBars);
+    const vwap = calculateStandardVWAP(globalBars, VWAP_ANCHOR);
 
-    if (showATR1 && atr1.length > 0) {
-      const lastA = atr1[atr1.length - 1];
-      t1Series.update(lastA);
-      t2Series.update(lastA);
+    if (showATR1 && atr1.t1Data.length > 0) {
+      globalBot1 = atr1;
+      globalCycles = atr1.cycles;
+      t1Series.update(atr1.t1Data[atr1.t1Data.length - 1]);
+      t2Series.update(atr1.t2Data[atr1.t2Data.length - 1]);
     }
-    if (showATR2 && atr2.length > 0) {
-      const lastA = atr2[atr2.length - 1];
-      t1Series2.update(lastA);
-      t2Series2.update(lastA);
+    if (showATR2 && atr2.t1Data.length > 0) {
+      globalBot2 = atr2;
+      t1Series2.update(atr2.t1Data[atr2.t1Data.length - 1]);
+      t2Series2.update(atr2.t2Data[atr2.t2Data.length - 1]);
     }
     if (showVSR && vsr.length > 0) {
       globalVsrZones = vsr;
@@ -227,6 +248,8 @@ function setupRealtimeWS() {
     if (showVWAP && vwap.length > 0) {
       vwapSeries.update(vwap[vwap.length - 1]);
     }
+
+    requestAnimationFrame(drawOverlay);
 
     // Measure tool live update
     if (measureState.modeActive && measureState.step === 1) {

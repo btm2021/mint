@@ -1,4 +1,4 @@
-function calculateATRBot(bars, atrLen, emaLen, mult) {
+function calculateATRBot(bars, atrLen, emaLen, mult, maType = "ema") {
   if (bars.length === 0) return { t1Data: [], t2Data: [], cycles: [] };
 
   // 1. Calculate TR
@@ -27,12 +27,36 @@ function calculateATRBot(bars, atrLen, emaLen, mult) {
     }
   }
 
-  // 3. Calculate EMA
+  // 3. Calculate selected MA (EMA or VIDYA)
   let ema = new Array(bars.length);
-  let k = 2 / (emaLen + 1);
-  for (let i = 0; i < bars.length; i++) {
-    if (i === 0) ema[i] = bars[i].close;
-    else ema[i] = bars[i].close * k + ema[i - 1] * (1 - k);
+  if (maType === "vidya") {
+    const baseAlpha = 2 / (emaLen + 1);
+    const gains = new Array(bars.length).fill(0);
+    const losses = new Array(bars.length).fill(0);
+    let sumGain = 0;
+    let sumLoss = 0;
+    ema[0] = bars[0].close;
+    for (let i = 1; i < bars.length; i++) {
+      const change = bars[i].close - bars[i - 1].close;
+      gains[i] = Math.max(change, 0);
+      losses[i] = Math.max(-change, 0);
+      sumGain += gains[i];
+      sumLoss += losses[i];
+      if (i > emaLen) {
+        sumGain -= gains[i - emaLen];
+        sumLoss -= losses[i - emaLen];
+      }
+      const totalMove = sumGain + sumLoss;
+      const cmo = totalMove === 0 ? 0 : Math.abs((sumGain - sumLoss) / totalMove);
+      const alpha = baseAlpha * cmo;
+      ema[i] = alpha * bars[i].close + (1 - alpha) * ema[i - 1];
+    }
+  } else {
+    const k = 2 / (emaLen + 1);
+    for (let i = 0; i < bars.length; i++) {
+      if (i === 0) ema[i] = bars[i].close;
+      else ema[i] = bars[i].close * k + ema[i - 1] * (1 - k);
+    }
   }
 
   // 4. Calculate Trail2 & State
@@ -349,7 +373,7 @@ function calculateVSR(bars, length = 20, threshold = 10.0) {
   return zones;
 }
 
-function calculateStandardVWAP(bars) {
+function calculateStandardVWAP(bars, anchor = "day") {
   let vwapData = [];
   if (!bars || bars.length === 0) return vwapData;
   let currentDay = null;
@@ -359,9 +383,17 @@ function calculateStandardVWAP(bars) {
   for (let i = 0; i < bars.length; i++) {
     let b = bars[i];
     let date = new Date(b.time * 1000);
-    let dayStr = date.getUTCFullYear() + "-" + date.getUTCMonth() + "-" + date.getUTCDate();
-    if (dayStr !== currentDay) {
-      currentDay = dayStr;
+    let periodKey;
+    if (anchor === "month") {
+      periodKey = `${date.getUTCFullYear()}-${date.getUTCMonth()}`;
+    } else if (anchor === "week") {
+      const weekStart = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() - ((date.getUTCDay() + 6) % 7)));
+      periodKey = weekStart.toISOString().slice(0, 10);
+    } else {
+      periodKey = `${date.getUTCFullYear()}-${date.getUTCMonth()}-${date.getUTCDate()}`;
+    }
+    if (periodKey !== currentDay) {
+      currentDay = periodKey;
       sumVol = 0;
       sumVolPrice = 0;
     }
