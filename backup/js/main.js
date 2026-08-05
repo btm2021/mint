@@ -85,11 +85,11 @@ async function loadSymbol() {
   const vwapData = calculateStandardVWAP(globalBars, VWAP_ANCHOR);
   vwapSeries.setData(vwapData);
 
-  const bot1 = calculateATRBot(bars, ATR_LENGTH, EMA_LENGTH, ATR_MULT, MA_TYPE, ATR_SOURCE);
+  const bot1 = calculateATRBot(bars, ATR_LENGTH, EMA_LENGTH, ATR_MULT, MA_TYPE);
   globalBot1 = bot1;
   globalCycles = bot1.cycles;
 
-  const bot2 = calculateATRBot(bars, ATR2_LENGTH, ATR2_EMA_LENGTH, ATR2_MULT, ATR2_MA_TYPE, ATR2_SOURCE);
+  const bot2 = calculateATRBot(bars, ATR2_LENGTH, ATR2_EMA_LENGTH, ATR2_MULT, ATR2_MA_TYPE);
   globalBot2 = bot2;
   globalVsrZones = calculateVSR(bars, VSR_LENGTH, VSR_THRESHOLD);
 

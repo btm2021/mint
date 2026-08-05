@@ -226,8 +226,8 @@ function setupRealtimeWS() {
     }
 
     // Indicators
-    const atr1 = calculateATRBot(globalBars, ATR_LENGTH, EMA_LENGTH, ATR_MULT, MA_TYPE, ATR_SOURCE);
-    const atr2 = calculateATRBot(globalBars, ATR2_LENGTH, ATR2_EMA_LENGTH, ATR2_MULT, ATR2_MA_TYPE, ATR2_SOURCE);
+    const atr1 = calculateATRBot(globalBars, ATR_LENGTH, EMA_LENGTH, ATR_MULT, MA_TYPE);
+    const atr2 = calculateATRBot(globalBars, ATR2_LENGTH, ATR2_EMA_LENGTH, ATR2_MULT, ATR2_MA_TYPE);
     const vsr = calculateVSR(globalBars, VSR_LENGTH, VSR_THRESHOLD);
     const vwap = calculateStandardVWAP(globalBars, VWAP_ANCHOR);
 
@@ -242,7 +242,7 @@ function setupRealtimeWS() {
       t1Series2.update(atr2.t1Data[atr2.t1Data.length - 1]);
       t2Series2.update(atr2.t2Data[atr2.t2Data.length - 1]);
     }
-    if (showVSR) {
+    if (showVSR && vsr.length > 0) {
       globalVsrZones = vsr;
     }
     if (showVWAP && vwap.length > 0) {

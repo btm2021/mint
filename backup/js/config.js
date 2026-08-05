@@ -10,40 +10,29 @@ function getStoredNumber(key, fallback, min, max) {
   return Number.isFinite(value) && value >= min && value <= max ? value : fallback;
 }
 
-const ATR_MA_TYPES = ["ema", "vwma", "lwma", "wma", "hma", "vwap", "alma", "tema", "wwsma", "zlema", "lsma", "kama", "vidya", "smma", "mcginley", "swma"];
-const ATR_SOURCES = ["open", "high", "low", "close", "hl2", "hlc3", "ohlc4"];
-
 function getStoredMaType(key) {
-  const value = localStorage.getItem(key);
-  return ATR_MA_TYPES.includes(value) ? value : "ema";
-}
-
-function getStoredAtrSource(key) {
-  const value = localStorage.getItem(key);
-  return ATR_SOURCES.includes(value) ? value : "close";
+  return localStorage.getItem(key) === "vidya" ? "vidya" : "ema";
 }
 
 let LIMIT = getStoredNumber("stat1_barLimit", DEFAULT_BAR_LIMIT, MIN_BAR_LIMIT, MAX_BAR_LIMIT);
 
 // ATR Bot Settings
-let ATR_LENGTH = getStoredNumber("stat1_atrLength", 14, 1, 500);
-let EMA_LENGTH = getStoredNumber("stat1_emaLength", 30, 1, 500);
-let ATR_MULT = getStoredNumber("stat1_atrMultiplier", 2, 0.1, 10);
+let ATR_LENGTH = getStoredNumber("stat1_atrLength", 10, 1, 500);
+let EMA_LENGTH = getStoredNumber("stat1_emaLength", 21, 1, 500);
+let ATR_MULT = getStoredNumber("stat1_atrMultiplier", 1.618, 0.001, 100);
 let MA_TYPE = getStoredMaType("stat1_atrMaType");
-let ATR_SOURCE = getStoredAtrSource("stat1_atrSource");
-let ATR2_LENGTH = getStoredNumber("stat1_atr2Length", 14, 1, 500);
-let ATR2_EMA_LENGTH = getStoredNumber("stat1_atr2EmaLength", 30, 1, 500);
-let ATR2_MULT = getStoredNumber("stat1_atr2Multiplier", 2, 0.1, 10);
+let ATR2_LENGTH = getStoredNumber("stat1_atr2Length", 10, 1, 500);
+let ATR2_EMA_LENGTH = getStoredNumber("stat1_atr2EmaLength", 14, 1, 500);
+let ATR2_MULT = getStoredNumber("stat1_atr2Multiplier", 1, 0.001, 100);
 let ATR2_MA_TYPE = getStoredMaType("stat1_atr2MaType");
-let ATR2_SOURCE = getStoredAtrSource("stat1_atr2Source");
 
 // VP Settings
 let NUM_ROWS = getStoredNumber("stat1_vpRows", 24, 4, 200);
 let VA_PCT = getStoredNumber("stat1_vpValueArea", 70, 1, 100);
 
 // VSR Settings
-let VSR_LENGTH = getStoredNumber("stat1_vsrLength", 10, 1, 500);
-let VSR_THRESHOLD = getStoredNumber("stat1_vsrThreshold", 10, 1, 20);
+let VSR_LENGTH = getStoredNumber("stat1_vsrLength", 20, 1, 500);
+let VSR_THRESHOLD = getStoredNumber("stat1_vsrThreshold", 10, 0.01, 1000);
 let VWAP_ANCHOR = ["day", "week", "month"].includes(localStorage.getItem("stat1_vwapAnchor"))
   ? localStorage.getItem("stat1_vwapAnchor")
   : "day";

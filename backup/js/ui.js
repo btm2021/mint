@@ -232,8 +232,6 @@ function setupIntervalPills() {
   pills.forEach((btn) => {
     btn.classList.toggle("active", btn.dataset.iv === INTERVAL);
   });
-  const revealActiveInterval = () => document.querySelector(".iv-btn.active")?.scrollIntoView({ block: "nearest", inline: "nearest" });
-  requestAnimationFrame(revealActiveInterval);
   pills.forEach((btn) => {
     btn.addEventListener("click", async () => {
       const iv = btn.dataset.iv;
@@ -241,7 +239,6 @@ function setupIntervalPills() {
       INTERVAL = iv;
       localStorage.setItem("stat1_interval", iv);
       pills.forEach((b) => b.classList.toggle("active", b.dataset.iv === iv));
-      revealActiveInterval();
       if (SYMBOL) {
         setStatus("loading", `Loading ${SYMBOL} ${iv}...`);
         await loadSymbol();
@@ -329,32 +326,23 @@ function setupIndicatorSettings() {
   const cancelBtn = document.getElementById("indicator-config-cancel");
   const applyBtn = document.getElementById("indicator-config-apply");
   let currentIndicator = null;
-  const maTypeOptions = [
-    ["ema", "EMA"], ["vwma", "VWMA"], ["lwma", "LWMA"], ["wma", "WMA"],
-    ["hma", "HMA"], ["vwap", "VWAP (rolling)"], ["alma", "ALMA"], ["tema", "TEMA"],
-    ["wwsma", "WWSMA"], ["zlema", "ZLEMA"], ["lsma", "LSMA"], ["kama", "KAMA"],
-    ["vidya", "VIDYA"], ["smma", "SMMA"], ["mcginley", "McGinley"], ["swma", "SWMA"],
-  ];
-  const sourceOptions = [["open", "Open"], ["high", "High"], ["low", "Low"], ["close", "Close"], ["hl2", "HL2"], ["hlc3", "HLC3"], ["ohlc4", "OHLC4"]];
 
   const configs = {
     atr1: { title: "ATR Bot 1", fields: [
-      { key: "source", label: "Source", type: "select", options: sourceOptions, value: () => ATR_SOURCE },
-      { key: "maType", label: "MA type", type: "select", options: maTypeOptions, value: () => MA_TYPE },
+      { key: "maType", label: "MA type", type: "select", options: [["ema", "EMA"], ["vidya", "VIDYA"]], value: () => MA_TYPE },
       { key: "atrLength", label: "ATR length", type: "number", min: 1, max: 500, step: 1, value: () => ATR_LENGTH },
-      { key: "emaLength", label: "MA length", type: "number", min: 1, max: 500, step: 1, value: () => EMA_LENGTH },
-      { key: "multiplier", label: "Multiplier", type: "number", min: 0.1, max: 10, step: 0.1, value: () => ATR_MULT },
+      { key: "emaLength", label: "EMA length", type: "number", min: 1, max: 500, step: 1, value: () => EMA_LENGTH },
+      { key: "multiplier", label: "Multiplier", type: "number", min: 0.001, max: 100, step: 0.001, value: () => ATR_MULT },
     ] },
     atr2: { title: "ATR Bot 2", fields: [
-      { key: "source", label: "Source", type: "select", options: sourceOptions, value: () => ATR2_SOURCE },
-      { key: "maType", label: "MA type", type: "select", options: maTypeOptions, value: () => ATR2_MA_TYPE },
+      { key: "maType", label: "MA type", type: "select", options: [["ema", "EMA"], ["vidya", "VIDYA"]], value: () => ATR2_MA_TYPE },
       { key: "atrLength", label: "ATR length", type: "number", min: 1, max: 500, step: 1, value: () => ATR2_LENGTH },
-      { key: "emaLength", label: "MA length", type: "number", min: 1, max: 500, step: 1, value: () => ATR2_EMA_LENGTH },
-      { key: "multiplier", label: "Multiplier", type: "number", min: 0.1, max: 10, step: 0.1, value: () => ATR2_MULT },
+      { key: "emaLength", label: "EMA length", type: "number", min: 1, max: 500, step: 1, value: () => ATR2_EMA_LENGTH },
+      { key: "multiplier", label: "Multiplier", type: "number", min: 0.001, max: 100, step: 0.001, value: () => ATR2_MULT },
     ] },
     vsr: { title: "VSR Zones", fields: [
       { key: "length", label: "Lookback length", type: "number", min: 1, max: 500, step: 1, value: () => VSR_LENGTH },
-      { key: "threshold", label: "Threshold", type: "number", min: 1, max: 20, step: 0.1, value: () => VSR_THRESHOLD },
+      { key: "threshold", label: "Threshold", type: "number", min: 0.01, max: 1000, step: 0.01, value: () => VSR_THRESHOLD },
     ] },
     vp: { title: "Volume Profile", fields: [
       { key: "rows", label: "Price rows", type: "number", min: 4, max: 200, step: 1, value: () => NUM_ROWS },
@@ -400,23 +388,19 @@ function setupIndicatorSettings() {
     if (!currentIndicator) return;
     const appliedConfig = configs[currentIndicator];
     if (currentIndicator === "atr1") {
-      const atr = numberValue("atrLength", 1, 500), ema = numberValue("emaLength", 1, 500), mult = numberValue("multiplier", 0.1, 10, false);
+      const atr = numberValue("atrLength", 1, 500), ema = numberValue("emaLength", 1, 500), mult = numberValue("multiplier", 0.001, 100, false);
       if (atr === null || ema === null || mult === null) return;
-      const formData = new FormData(form);
-      MA_TYPE = ATR_MA_TYPES.includes(formData.get("maType")) ? formData.get("maType") : "ema";
-      ATR_SOURCE = ATR_SOURCES.includes(formData.get("source")) ? formData.get("source") : "close";
+      MA_TYPE = new FormData(form).get("maType") === "vidya" ? "vidya" : "ema";
       ATR_LENGTH = atr; EMA_LENGTH = ema; ATR_MULT = mult;
-      localStorage.setItem("stat1_atrMaType", MA_TYPE); localStorage.setItem("stat1_atrSource", ATR_SOURCE); localStorage.setItem("stat1_atrLength", atr); localStorage.setItem("stat1_emaLength", ema); localStorage.setItem("stat1_atrMultiplier", mult);
+      localStorage.setItem("stat1_atrMaType", MA_TYPE); localStorage.setItem("stat1_atrLength", atr); localStorage.setItem("stat1_emaLength", ema); localStorage.setItem("stat1_atrMultiplier", mult);
     } else if (currentIndicator === "atr2") {
-      const atr = numberValue("atrLength", 1, 500), ema = numberValue("emaLength", 1, 500), mult = numberValue("multiplier", 0.1, 10, false);
+      const atr = numberValue("atrLength", 1, 500), ema = numberValue("emaLength", 1, 500), mult = numberValue("multiplier", 0.001, 100, false);
       if (atr === null || ema === null || mult === null) return;
-      const formData = new FormData(form);
-      ATR2_MA_TYPE = ATR_MA_TYPES.includes(formData.get("maType")) ? formData.get("maType") : "ema";
-      ATR2_SOURCE = ATR_SOURCES.includes(formData.get("source")) ? formData.get("source") : "close";
+      ATR2_MA_TYPE = new FormData(form).get("maType") === "vidya" ? "vidya" : "ema";
       ATR2_LENGTH = atr; ATR2_EMA_LENGTH = ema; ATR2_MULT = mult;
-      localStorage.setItem("stat1_atr2MaType", ATR2_MA_TYPE); localStorage.setItem("stat1_atr2Source", ATR2_SOURCE); localStorage.setItem("stat1_atr2Length", atr); localStorage.setItem("stat1_atr2EmaLength", ema); localStorage.setItem("stat1_atr2Multiplier", mult);
+      localStorage.setItem("stat1_atr2MaType", ATR2_MA_TYPE); localStorage.setItem("stat1_atr2Length", atr); localStorage.setItem("stat1_atr2EmaLength", ema); localStorage.setItem("stat1_atr2Multiplier", mult);
     } else if (currentIndicator === "vsr") {
-      const length = numberValue("length", 1, 500), threshold = numberValue("threshold", 1, 20, false);
+      const length = numberValue("length", 1, 500), threshold = numberValue("threshold", 0.01, 1000, false);
       if (length === null || threshold === null) return;
       VSR_LENGTH = length; VSR_THRESHOLD = threshold;
       localStorage.setItem("stat1_vsrLength", length); localStorage.setItem("stat1_vsrThreshold", threshold);

@@ -237,16 +237,8 @@ body {
   border: 1px solid var(--border-color);
   border-radius: 8px;
   padding: 3px;
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow-x: auto;
-  overflow-y: hidden;
-  scrollbar-width: none;
-  -webkit-overflow-scrolling: touch;
-  touch-action: pan-x;
+  flex-shrink: 0;
 }
-
-.tb-intervals::-webkit-scrollbar { display: none; }
 
 .iv-btn {
   height: 26px;
@@ -261,7 +253,6 @@ body {
   cursor: pointer;
   transition: all 0.15s;
   white-space: nowrap;
-  flex: 0 0 auto;
 }
 
 .iv-btn:hover {
@@ -448,8 +439,6 @@ body.fullscreen #draw-sidebar {
   background: var(--border-color);
   margin: 4px 0;
 }
-
-.sidebar-spacer { flex: 1; }
 
 .sidebar-btn {
   width: 36px;
@@ -1172,24 +1161,6 @@ body.fullscreen #draw-sidebar {
   right: 14px;
   width: 268px;
   padding: 0 0 8px;
-}
-
-@media (max-width: 600px) {
-  #topbar { padding: 0 8px; gap: 6px; overflow: hidden; }
-  .tb-brand { padding-right: 0; border-right: 0; }
-  .tb-brand-name, #price-ticker, #status { display: none; }
-  #symbol-input { width: 116px; }
-  .tb-intervals { flex: 1 1 auto; max-width: none; }
-  .tb-actions { gap: 0; }
-
-  #settings-panel {
-    top: calc(var(--topbar-h) + 8px);
-    right: 8px;
-    left: calc(var(--sidebar-w) + 8px);
-    width: auto;
-    max-height: calc(100dvh - var(--topbar-h) - 16px);
-    overflow-y: auto;
-  }
 }
 
 .settings-section {

@@ -1,32 +1,8 @@
-function calculateATRBot(bars, atrLen, maLen, mult, maType = "ema", source = "close") {
+function calculateATRBot(bars, atrLen, emaLen, mult, maType = "ema") {
   if (bars.length === 0) return { t1Data: [], t2Data: [], cycles: [] };
 
-  // Trail 1 uses the configured price source. ATR itself always uses OHLC.
-  const sourceValue = (bar) => {
-    switch (String(source).toLowerCase()) {
-      case "open": return bar.open;
-      case "high": return bar.high;
-      case "low": return bar.low;
-      case "hl2": return (bar.high + bar.low) / 2;
-      case "hlc3": return (bar.high + bar.low + bar.close) / 3;
-      case "ohlc4": return (bar.open + bar.high + bar.low + bar.close) / 4;
-      default: return bar.close;
-    }
-  };
-  const values = bars.map(sourceValue);
-  const windowStart = (index, length) => Math.max(0, index - length + 1);
-  const wmaAt = (series, index, length) => {
-    const start = windowStart(index, Math.max(1, length));
-    let weightedSum = 0, weightSum = 0, weight = 1;
-    for (let j = start; j <= index; j++, weight++) {
-      weightedSum += series[j] * weight;
-      weightSum += weight;
-    }
-    return weightedSum / weightSum;
-  };
-
-  // 1. True Range
-  const tr = new Array(bars.length);
+  // 1. Calculate TR
+  let tr = new Array(bars.length);
   for (let i = 0; i < bars.length; i++) {
     if (i === 0) {
       tr[i] = bars[i].high - bars[i].low;
@@ -38,167 +14,81 @@ function calculateATRBot(bars, atrLen, maLen, mult, maType = "ema", source = "cl
     }
   }
 
-  // 2. Wilder RMA, seeded by the first True Range (not an initial SMA).
-  const atr = new Array(bars.length);
+  // 2. Calculate ATR (RMA of TR)
+  let atr = new Array(bars.length);
+  let alpha = 1 / atrLen;
+  let sum = 0;
   for (let i = 0; i < bars.length; i++) {
-    atr[i] = i === 0 ? tr[i] : (atr[i - 1] * (atrLen - 1) + tr[i]) / atrLen;
+    if (i < atrLen) {
+      sum += tr[i];
+      atr[i] = sum / (i + 1);
+    } else {
+      atr[i] = alpha * tr[i] + (1 - alpha) * atr[i - 1];
+    }
   }
 
-  // 3. Trail 1 MA. Every branch deliberately emits values during warm-up,
-  // matching the custom-study rules documented in indicator.md.
-  const trail1 = new Array(bars.length);
-  const normalizedType = String(maType).toLowerCase();
-  const alpha = 2 / (maLen + 1);
-  const ema1 = [], ema2 = [], ema3 = [], rawHull = [];
-  const wwsma = [], kama = [];
-
-  for (let i = 0; i < bars.length; i++) {
-    const value = values[i];
-    const start = windowStart(i, maLen);
-    const count = i - start + 1;
-
-    switch (normalizedType) {
-      case "vwma": {
-        let priceVolume = 0, volume = 0;
-        for (let j = start; j <= i; j++) { priceVolume += values[j] * bars[j].volume; volume += bars[j].volume; }
-        trail1[i] = volume === 0 ? value : priceVolume / volume;
-        break;
+  // 3. Calculate selected MA (EMA or VIDYA)
+  let ema = new Array(bars.length);
+  if (maType === "vidya") {
+    const baseAlpha = 2 / (emaLen + 1);
+    const gains = new Array(bars.length).fill(0);
+    const losses = new Array(bars.length).fill(0);
+    let sumGain = 0;
+    let sumLoss = 0;
+    ema[0] = bars[0].close;
+    for (let i = 1; i < bars.length; i++) {
+      const change = bars[i].close - bars[i - 1].close;
+      gains[i] = Math.max(change, 0);
+      losses[i] = Math.max(-change, 0);
+      sumGain += gains[i];
+      sumLoss += losses[i];
+      if (i > emaLen) {
+        sumGain -= gains[i - emaLen];
+        sumLoss -= losses[i - emaLen];
       }
-      case "wma":
-      case "lwma":
-        trail1[i] = wmaAt(values, i, maLen);
-        break;
-      case "hma":
-      case "hull": {
-        rawHull[i] = 2 * wmaAt(values, i, Math.max(1, Math.floor(maLen / 2))) - wmaAt(values, i, maLen);
-        trail1[i] = wmaAt(rawHull, i, Math.max(1, Math.floor(Math.sqrt(maLen))));
-        break;
-      }
-      case "vwap": {
-        let priceVolume = 0, volume = 0;
-        for (let j = start; j <= i; j++) {
-          const typicalPrice = (bars[j].high + bars[j].low + bars[j].close) / 3;
-          priceVolume += typicalPrice * bars[j].volume;
-          volume += bars[j].volume;
-        }
-        trail1[i] = volume === 0 ? value : priceVolume / volume;
-        break;
-      }
-      case "alma": {
-        const center = Math.floor(0.85 * (maLen - 1));
-        const sigma = maLen / 6;
-        let weightedSum = 0, weightSum = 0;
-        for (let j = start; j <= i; j++) {
-          const position = j - start;
-          const weight = Math.exp(-((position - center) ** 2) / (2 * sigma ** 2));
-          weightedSum += values[j] * weight;
-          weightSum += weight;
-        }
-        trail1[i] = weightedSum / weightSum;
-        break;
-      }
-      case "tema":
-        ema1[i] = i === 0 ? value : alpha * value + (1 - alpha) * ema1[i - 1];
-        ema2[i] = i === 0 ? value : alpha * ema1[i] + (1 - alpha) * ema2[i - 1];
-        ema3[i] = i === 0 ? value : alpha * ema2[i] + (1 - alpha) * ema3[i - 1];
-        trail1[i] = 3 * ema1[i] - 3 * ema2[i] + ema3[i];
-        break;
-      case "wwsma": {
-        if (count < maLen) {
-          let sum = 0;
-          for (let j = start; j <= i; j++) sum += values[j];
-          trail1[i] = sum / count;
-        } else {
-          trail1[i] = (wwsma[i - 1] * (maLen - 1) + value) / maLen;
-        }
-        wwsma[i] = trail1[i];
-        break;
-      }
-      case "zlema": {
-        const lag = Math.floor((maLen - 1) / 2);
-        const deLagged = i >= lag ? value + (value - values[i - lag]) : value;
-        trail1[i] = i === 0 ? deLagged : alpha * deLagged + (1 - alpha) * trail1[i - 1];
-        break;
-      }
-      case "lsma": {
-        if (count === 1) { trail1[i] = value; break; }
-        let sumIndex = 0, sumValue = 0, sumIndexValue = 0, sumIndexSquared = 0;
-        for (let j = 0; j < count; j++) {
-          const sample = values[start + j];
-          sumIndex += j; sumValue += sample; sumIndexValue += j * sample; sumIndexSquared += j * j;
-        }
-        const denominator = count * sumIndexSquared - sumIndex ** 2;
-        const slope = (count * sumIndexValue - sumIndex * sumValue) / denominator;
-        trail1[i] = (sumValue - slope * sumIndex) / count + slope * (count - 1);
-        break;
-      }
-      case "kama": {
-        if (i <= maLen) {
-          trail1[i] = value;
-        } else {
-          let volatility = 0;
-          for (let j = i - maLen + 1; j <= i; j++) volatility += Math.abs(values[j] - values[j - 1]);
-          const efficiencyRatio = volatility === 0 ? 0 : Math.abs(value - values[i - maLen]) / volatility;
-          const smoothingConstant = (efficiencyRatio * (2 / 3 - 2 / 31) + 2 / 31) ** 2;
-          trail1[i] = kama[i - 1] + smoothingConstant * (value - kama[i - 1]);
-        }
-        kama[i] = trail1[i];
-        break;
-      }
-      case "vidya": {
-        let gains = 0, losses = 0;
-        for (let j = Math.max(1, i - maLen + 1); j <= i; j++) {
-          const change = values[j] - values[j - 1];
-          gains += Math.max(change, 0);
-          losses += Math.max(-change, 0);
-        }
-        const movement = gains + losses;
-        const cmo = movement === 0 ? 0 : Math.abs((gains - losses) / movement);
-        trail1[i] = i === 0 ? value : alpha * cmo * value + (1 - alpha * cmo) * trail1[i - 1];
-        break;
-      }
-      case "smma": {
-        if (i < maLen - 1) trail1[i] = value;
-        else if (i === maLen - 1) {
-          let sum = 0;
-          for (let j = 0; j < maLen; j++) sum += values[j];
-          trail1[i] = sum / maLen;
-        } else trail1[i] = (trail1[i - 1] * (maLen - 1) + value) / maLen;
-        break;
-      }
-      case "mcginley": {
-        if (i === 0) trail1[i] = value;
-        else {
-          const ratio = value / trail1[i - 1];
-          trail1[i] = trail1[i - 1] + (value - trail1[i - 1]) / (maLen * ratio ** 4);
-        }
-        break;
-      }
-      case "swma":
-        trail1[i] = i < 3 ? value : (values[i - 3] + 2 * values[i - 2] + 2 * values[i - 1] + value) / 6;
-        break;
-      case "ema":
-      default:
-        trail1[i] = i === 0 ? value : alpha * value + (1 - alpha) * trail1[i - 1];
+      const totalMove = sumGain + sumLoss;
+      const cmo = totalMove === 0 ? 0 : Math.abs((sumGain - sumLoss) / totalMove);
+      const alpha = baseAlpha * cmo;
+      ema[i] = alpha * bars[i].close + (1 - alpha) * ema[i - 1];
+    }
+  } else {
+    const k = 2 / (emaLen + 1);
+    for (let i = 0; i < bars.length; i++) {
+      if (i === 0) ema[i] = bars[i].close;
+      else ema[i] = bars[i].close * k + ema[i - 1] * (1 - k);
     }
   }
 
   // 4. Calculate Trail2 & State
-  const trail2 = new Array(bars.length);
-  const state = new Array(bars.length); // 1 = Uptrend, -1 = Downtrend
+  let trail2 = new Array(bars.length);
+  let state = new Array(bars.length); // 1 = Uptrend, -1 = Downtrend
 
   for (let i = 0; i < bars.length; i++) {
-    const loss = atr[i] * mult;
-    const t1 = trail1[i];
-    const previousTrail2 = i === 0 ? 0 : trail2[i - 1];
-    const previousTrail1 = i === 0 ? t1 : trail1[i - 1];
+    let loss = atr[i] * mult;
+    let t1 = ema[i];
 
-    if (t1 > previousTrail2) {
-      trail2[i] = previousTrail1 > previousTrail2 ? Math.max(previousTrail2, t1 - loss) : t1 - loss;
-    } else {
-      trail2[i] = t1 < previousTrail2 && previousTrail1 < previousTrail2 ? Math.min(previousTrail2, t1 + loss) : t1 + loss;
+    if (i === 0) {
+      trail2[i] = t1 - loss;
+      state[i] = 1;
+      continue;
     }
-    state[i] = t1 > trail2[i] ? 1 : -1;
+
+    let prev_t2 = trail2[i - 1];
+    let prev_t1 = ema[i - 1];
+    let curr_t2;
+
+    if (t1 > prev_t2 && prev_t1 > prev_t2) {
+      curr_t2 = Math.max(prev_t2, t1 - loss);
+    } else if (t1 < prev_t2 && prev_t1 < prev_t2) {
+      curr_t2 = Math.min(prev_t2, t1 + loss);
+    } else if (t1 > prev_t2) {
+      curr_t2 = t1 - loss;
+    } else {
+      curr_t2 = t1 + loss;
+    }
+
+    trail2[i] = curr_t2;
+    state[i] = t1 > curr_t2 ? 1 : -1;
   }
 
   // 5. Build LWC Line Data & Extract Cycles
@@ -212,10 +102,10 @@ function calculateATRBot(bars, atrLen, maLen, mult, maType = "ema", source = "cl
     let isUp = state[i] === 1;
     let color = isUp ? "#00E676" : "#FF5252";
 
-    t1Data.push({ time: t, value: trail1[i], color: color });
+    t1Data.push({ time: t, value: ema[i], color: color });
     t2Data.push({ time: t, value: trail2[i], color: color });
 
-    let barData = { ...bars[i], t1: trail1[i], t2: trail2[i] };
+    let barData = { ...bars[i], t1: ema[i], t2: trail2[i] };
 
     if (currentCycle === null) {
       currentCycle = {
@@ -456,17 +346,11 @@ function calculateVSR(bars, length = 20, threshold = 10.0) {
       }
 
       if (isOverlap) {
-        const mergedUpper = Math.max(vsr_upper, p_upper);
-        const mergedLower = Math.min(vsr_lower, p_lower);
-        // A plot update starts on this bar. Do not rewrite prior candles with
-        // the merged range: that would repaint historical VSR output.
-        if (mergedUpper !== vsr_upper || mergedLower !== vsr_lower) {
-          if (currentZone) { currentZone.endIndex = i - 1; zones.push(currentZone); }
-          vsr_upper = mergedUpper;
-          vsr_lower = mergedLower;
-          currentZone = { startIndex: i, endIndex: i, upper: vsr_upper, lower: vsr_lower };
-        } else if (currentZone) {
-          currentZone.endIndex = i;
+        vsr_upper = Math.max(vsr_upper, p_upper);
+        vsr_lower = Math.min(vsr_lower, p_lower);
+        if (currentZone) {
+          currentZone.upper = vsr_upper;
+          currentZone.lower = vsr_lower;
         }
       } else {
         vsr_upper = p_upper;
