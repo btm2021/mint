@@ -44,12 +44,22 @@ let VA_PCT = getStoredNumber("stat1_vpValueArea", 70, 1, 100);
 // VSR Settings
 let VSR_LENGTH = getStoredNumber("stat1_vsrLength", 10, 1, 500);
 let VSR_THRESHOLD = getStoredNumber("stat1_vsrThreshold", 10, 1, 20);
+let VSR_DUAL_1_LENGTH = getStoredNumber("stat1_vsrDual1Length", 10, 1, 500);
+let VSR_DUAL_1_THRESHOLD = getStoredNumber("stat1_vsrDual1Threshold", 10, 1, 20);
+let VSR_DUAL_2_LENGTH = getStoredNumber("stat1_vsrDual2Length", 20, 1, 500);
+let VSR_DUAL_2_THRESHOLD = getStoredNumber("stat1_vsrDual2Threshold", 10, 1, 20);
+let VSR_DUAL_EMA_LENGTH = getStoredNumber("stat1_vsrDualEmaLength", 20, 1, 500);
+let VSR_DUAL_VIDYA_LENGTH = getStoredNumber("stat1_vsrDualVidyaLength", 20, 1, 500);
+let VSR_DUAL_CMO_LENGTH = getStoredNumber("stat1_vsrDualCmoLength", 9, 1, 500);
+let VSR_DUAL_VWAP_LENGTH = getStoredNumber("stat1_vsrDualVwapLength", 20, 1, 500);
 let VWAP_ANCHOR = ["day", "week", "month"].includes(localStorage.getItem("stat1_vwapAnchor"))
   ? localStorage.getItem("stat1_vwapAnchor")
   : "day";
 
 let chart, candleSeries, t1Series, t2Series, t1Series2, t2Series2;
 let canvas, ctx;
+let vsrDualChart, vsrDual1UpperSeries, vsrDual1LowerSeries, vsrDual2UpperSeries, vsrDual2LowerSeries, vsrDualEmaSeries, vsrDualVidyaSeries, vsrDualVwapSeries, vsrDualCanvas, vsrDualCtx;
+let globalVsrDual = null;
 let globalCycles = [];
 let globalVsrZones = [];
 // Full indicator results (used by analyse modal to extract exact values)
@@ -70,6 +80,10 @@ let lastCrosshairLogical = null;
 let showATR1 = localStorage.getItem("stat1_showATR1") !== "0";
 let showATR2 = localStorage.getItem("stat1_showATR2") !== "0";
 let showVSR = localStorage.getItem("stat1_showVSR") !== "0";
+let showVSRDual = localStorage.getItem("stat1_showVSRDual") !== "0";
+let showVSRDualEMA = localStorage.getItem("stat1_showVSRDualEMA") !== "0";
+let showVSRDualVIDYA = localStorage.getItem("stat1_showVSRDualVIDYA") !== "0";
+let showVSRDualVWAP = localStorage.getItem("stat1_showVSRDualVWAP") !== "0";
 let showVPVol = localStorage.getItem("stat1_showVPVol") !== "0";
 let showVWAP = localStorage.getItem("stat1_showVWAP") !== "0";
 

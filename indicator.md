@@ -368,3 +368,146 @@ Ngay sau khi xử lý, code lưu `V_t`, `H_t`, `L_t`, `C_t` và `stdev_t` làm d
 - Code không kiểm tra volume hiện tại bằng 0. Chỉ volume trước bằng 0 mới khiến `change_t = 0`.
 - Biến `bars_buffer` có trong source nhưng không tham gia vào tính toán output hay logic vùng; nó không ảnh hưởng kết quả.
 - Cụm "No repaint" không xuất hiện ở `vsr.js`. Bản đang nạp này tính zone từ nến trước. Tệp `vsr_1.js` có biến thể dùng nến hiện tại, nhưng hàm trong tệp là `createVSROriginal` trong khi app tìm `createVSR_1`, nên biến thể đó hiện không được đăng ký thành study trên chart.
+
+---
+
+## 3. VSR Dual Zones (panel dưới)
+
+`VSR Dual Zones` là study ở panel riêng (`is_price_study: false`), vì vậy khi thêm từ danh sách Indicators nó nằm dưới biểu đồ giá như RSI. Study vẽ hai vùng VSR dạng hộp bằng phần tô giữa đường Upper và Lower: VSR 1 màu vàng, VSR 2 màu xanh dương. Cùng panel đó có ba đường giá: EMA, VIDYA và VWAP.
+
+### Cách study hiển thị trong hệ thống
+
+Script được nạp cùng các custom studies khi ứng dụng khởi động và được đăng ký vào `custom_indicators_getter` của cả chart thường, desktop chart và replay chart. Trên Advanced Chart, thêm study từ danh sách Indicators với tên **`VSR Dual Zones`**.
+
+Study có `is_price_study: false`, nên TradingView tạo một panel mới bên dưới biểu đồ thay vì vẽ lên chart chính. Tuy ở panel dưới, mọi giá trị Upper/Lower, EMA, VIDYA và VWAP đều là **giá**, vì thế trục dọc của panel là price scale chứ không phải thang 0–100 như RSI.
+
+| Thành phần vẽ | Giá trị trả về mỗi nến | Hiển thị mặc định |
+| --- | --- | --- |
+| `VSR 1 Upper` / `VSR 1 Lower` | `vsr1Upper`, `vsr1Lower` | Đường rộng 0; phần tô giữa hai đường là hộp vàng, 50% trong suốt. |
+| `VSR 2 Upper` / `VSR 2 Lower` | `vsr2Upper`, `vsr2Lower` | Đường rộng 0; phần tô giữa hai đường là hộp xanh, 65% trong suốt. |
+| `Price EMA` | EMA của close | Đường cam `#FF9800`, rộng 2. |
+| `Price VIDYA` | VIDYA của close | Đường tím `#AB47BC`, rộng 2. |
+| `Price VWAP` | VWAP trượt của typical price | Đường cyan `#00E5FF`, rộng 2. |
+
+Một hộp bắt đầu khi VSR tương ứng tạo zone đầu tiên. Trong các nến tiếp theo, Upper và Lower được trả lại không đổi nên phần fill tiếp tục kéo sang phải. Khi có một zone mới không chồng lấp, hai mức được thay bằng zone mới và hộp chuyển sang biên độ mới tại nến kích hoạt. Khi chưa có zone, Upper/Lower là `NaN` nên không có hộp nào được tô.
+
+### Đầu vào
+
+| Input | Mặc định | Ý nghĩa |
+| --- | ---: | --- |
+| `VSR 1 Length` | 10 | Số volume change để tính độ lệch chuẩn của VSR 1. |
+| `VSR 1 Threshold` | 10.0 | Ngưỡng spike riêng để tạo/cập nhật hộp VSR 1. |
+| `VSR 2 Length` | 20 | Số volume change để tính độ lệch chuẩn của VSR 2. |
+| `VSR 2 Threshold` | 10.0 | Ngưỡng spike riêng để tạo/cập nhật hộp VSR 2. |
+| `Price EMA Length` | 20 | Chu kỳ EMA của close. |
+| `Price VIDYA Length` | 20 | Chu kỳ EMA cơ sở của VIDYA(close). |
+| `VIDYA CMO Length` | 9 | Chu kỳ CMO để điều chỉnh độ mượt VIDYA. |
+| `Price VWAP Length` | 20 | Số nến của VWAP trượt tính từ typical price. |
+
+### Tính VSR 1 và VSR 2
+
+Hai VSR dùng cùng một thay đổi volume của nến `t`:
+
+```text
+change_t = V_t / V_(t-1) - 1
+```
+
+Nếu `V_(t-1)` là `0` hoặc không tồn tại, `change_t = 0`. Mỗi VSR giữ buffer riêng của `change`, có độ dài lần lượt là `P1` và `P2`. Với buffer có `m ≥ 2` phần tử:
+
+```text
+mean = Σchange_i / m
+stdev = sqrt(Σ(change_i - mean)² / m)
+```
+
+Độ lệch chuẩn dùng population variance và bao gồm nến hiện tại. Điểm oscillator lại dùng độ lệch chuẩn **của nến trước**:
+
+```text
+VSR1_t = |change_t / stdev1_(t-1)|
+VSR2_t = |change_t / stdev2_(t-1)|
+```
+
+Nếu `stdev` trước đó bằng `0`, không tồn tại, hoặc buffer tương ứng có ít hơn 2 giá trị, VSR trả `0`. Mỗi VSR chỉ tạo/cập nhật hộp của chính nó khi `VSRj_t > Threshold_j`.
+
+### Tạo hai hộp VSR
+
+Khi VSR `j` vượt threshold tại nến `t`, hộp của nó lấy biên độ nến trước:
+
+```text
+proposedUpper_j = max(H_(t-1), C_(t-1))
+proposedLower_j = min(L_(t-1), C_(t-1))
+```
+
+Mỗi VSR giữ một hộp riêng. Hộp mới được gộp với hộp hiện tại của **cùng VSR** khi hai khoảng chồng lấp:
+
+```text
+proposedLower_j ≤ upper_j và lower_j ≤ proposedUpper_j
+```
+
+Khi chồng lấp, hộp được mở rộng bằng `upper_j = max(upper_j, proposedUpper_j)` và `lower_j = min(lower_j, proposedLower_j)`. Khi không chồng lấp, hộp cũ của VSR đó bị thay bằng hộp mới. Khi không có spike, hộp giữ nguyên và tiếp tục hiển thị trong panel dưới.
+
+### Trình tự tính trên mỗi nến
+
+Để tái tạo đúng state của study, mọi bước sau phải chạy theo thứ tự cho nến `t`:
+
+```text
+1. Đọc H_t, L_t, C_t, V_t.
+2. Tính change_t từ V_t và V_(t-1).
+3. Thêm cùng change_t vào hai buffer VSR; cắt mỗi buffer theo Length riêng.
+4. Tính stdev1_t và stdev2_t từ buffer sau khi đã thêm change_t.
+5. Tính signal1_t bằng stdev1_(t-1), signal2_t bằng stdev2_(t-1).
+6. Nếu signal_j_t > Threshold_j, tạo/gộp hộp j từ H_(t-1), L_(t-1), C_(t-1).
+7. Lưu OHLCV và hai stdev hiện tại làm state cho nến sau.
+8. Tính EMA(close), VIDYA(close), rolling VWAP và trả bảy plots.
+```
+
+Điểm quan trọng là `signal_j_t` dùng **stdev của bar trước**, còn stdev mới tính ở bước 4 chỉ được lưu cho nến kế tiếp. Hai VSR cùng dùng `change_t`, `H_(t-1)`, `L_(t-1)` và `C_(t-1)`, nhưng có buffer, stdev, threshold và hộp hoàn toàn độc lập.
+
+### Các đường đại diện giá
+
+Ba đường này được tính từ giá, không phải score VSR, nên chúng dùng cùng thang đo với Upper/Lower của các hộp.
+
+#### Price EMA
+
+EMA dùng close với `E = Price EMA Length`:
+
+```text
+alpha = 2 / (E + 1)
+EMA_0 = C_0
+EMA_t = alpha × C_t + (1 - alpha) × EMA_(t-1)
+```
+
+#### Price VIDYA
+
+VIDYA cũng dùng close. Trong cửa sổ `M = VIDYA CMO Length` thay đổi close gần nhất:
+
+```text
+gain = Σmax(C_i - C_(i-1), 0)
+loss = Σmax(C_(i-1) - C_i, 0)
+CMO = 100 × (gain - loss) / (gain + loss)    (0 nếu mẫu số = 0)
+alpha = (2 / (Price VIDYA Length + 1)) × |CMO| / 100
+VIDYA_0 = C_0
+VIDYA_t = alpha × C_t + (1 - alpha) × VIDYA_(t-1)
+```
+
+Trước khi đủ `VIDYA CMO Length` thay đổi giá, `CMO = 0`, vì vậy VIDYA giữ nguyên giá khởi tạo.
+
+#### Price VWAP
+
+Đây là VWAP **trượt**, không reset theo phiên. Trên tối đa `W = Price VWAP Length` nến:
+
+```text
+typicalPrice_i = (H_i + L_i + C_i) / 3
+VWAP_t = Σ(typicalPrice_i × V_i) / ΣV_i
+```
+
+Nếu tổng volume bằng 0, code dùng `typicalPrice_t`.
+
+### Giá trị trả về cho Charting Library
+
+Ở cuối mỗi nến, study trả đúng thứ tự sau:
+
+```text
+[vsr1Upper, vsr1Lower, vsr2Upper, vsr2Lower, ema, vidya, vwap]
+```
+
+Hai `filledAreas` ghép plot 0–1 và plot 2–3. Vì vậy chỉ bốn giá trị đầu quyết định hai hộp; ba giá trị sau là các đường giá và không làm thay đổi điều kiện VSR hay biên của hộp.

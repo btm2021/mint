@@ -2,6 +2,10 @@ function setupToggles() {
   const tAtr1 = document.getElementById("toggle-atr1");
   const tAtr2 = document.getElementById("toggle-atr2");
   const tVsr = document.getElementById("toggle-vsr");
+  const tVsrDual = document.getElementById("toggle-vsr-dual");
+  const tVsrDualEma = document.getElementById("toggle-vsr-dual-ema");
+  const tVsrDualVidya = document.getElementById("toggle-vsr-dual-vidya");
+  const tVsrDualVwap = document.getElementById("toggle-vsr-dual-vwap");
   const tVpVol = document.getElementById("toggle-vpvol");
   const tVwap = document.getElementById("toggle-vwap");
   const tDrawVP = document.getElementById("toggle-draw-vp");
@@ -10,6 +14,10 @@ function setupToggles() {
   tAtr1.checked = showATR1;
   tAtr2.checked = showATR2;
   tVsr.checked = showVSR;
+  tVsrDual.checked = showVSRDual;
+  tVsrDualEma.checked = showVSRDualEMA;
+  tVsrDualVidya.checked = showVSRDualVIDYA;
+  tVsrDualVwap.checked = showVSRDualVWAP;
   tVpVol.checked = showVPVol;
   tVwap.checked = showVWAP;
   tDrawVP.checked = drawingVPModeActive;
@@ -30,6 +38,30 @@ function setupToggles() {
     showVSR = e.target.checked;
     localStorage.setItem("stat1_showVSR", showVSR ? "1" : "0");
     requestAnimationFrame(drawOverlay);
+  });
+  tVsrDual.addEventListener("change", (e) => {
+    showVSRDual = e.target.checked;
+    localStorage.setItem("stat1_showVSRDual", showVSRDual ? "1" : "0");
+    document.getElementById("vsr-dual-panel").hidden = !showVSRDual;
+    requestAnimationFrame(syncCanvasSize);
+  });
+  tVsrDualEma.addEventListener("change", (e) => {
+    showVSRDualEMA = e.target.checked;
+    localStorage.setItem("stat1_showVSRDualEMA", showVSRDualEMA ? "1" : "0");
+    vsrDualEmaSeries.applyOptions({ visible: showVSRDualEMA });
+    requestAnimationFrame(drawVSRDualOverlay);
+  });
+  tVsrDualVidya.addEventListener("change", (e) => {
+    showVSRDualVIDYA = e.target.checked;
+    localStorage.setItem("stat1_showVSRDualVIDYA", showVSRDualVIDYA ? "1" : "0");
+    vsrDualVidyaSeries.applyOptions({ visible: showVSRDualVIDYA });
+    requestAnimationFrame(drawVSRDualOverlay);
+  });
+  tVsrDualVwap.addEventListener("change", (e) => {
+    showVSRDualVWAP = e.target.checked;
+    localStorage.setItem("stat1_showVSRDualVWAP", showVSRDualVWAP ? "1" : "0");
+    vsrDualVwapSeries.applyOptions({ visible: showVSRDualVWAP });
+    requestAnimationFrame(drawVSRDualOverlay);
   });
   tVpVol.addEventListener("change", (e) => {
     showVPVol = e.target.checked;
@@ -92,6 +124,16 @@ async function loadSymbol() {
   const bot2 = calculateATRBot(bars, ATR2_LENGTH, ATR2_EMA_LENGTH, ATR2_MULT, ATR2_MA_TYPE, ATR2_SOURCE);
   globalBot2 = bot2;
   globalVsrZones = calculateVSR(bars, VSR_LENGTH, VSR_THRESHOLD);
+  setVSRDualData(calculateVSRDual(bars, {
+    vsr1Length: VSR_DUAL_1_LENGTH,
+    vsr1Threshold: VSR_DUAL_1_THRESHOLD,
+    vsr2Length: VSR_DUAL_2_LENGTH,
+    vsr2Threshold: VSR_DUAL_2_THRESHOLD,
+    emaLength: VSR_DUAL_EMA_LENGTH,
+    vidyaLength: VSR_DUAL_VIDYA_LENGTH,
+    cmoLength: VSR_DUAL_CMO_LENGTH,
+    vwapLength: VSR_DUAL_VWAP_LENGTH,
+  }));
 
   t1Series.setData(bot1.t1Data);
   t2Series.setData(bot1.t2Data);
@@ -107,6 +149,7 @@ async function run() {
   canvas = document.getElementById("overlay-canvas");
   ctx = canvas.getContext("2d");
   initChart();
+  document.getElementById("vsr-dual-panel").hidden = !showVSRDual;
   setupToggles();
   setupSettingsPanel();
   setupIndicatorSettings();

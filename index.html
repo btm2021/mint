@@ -72,6 +72,22 @@
         <div class="settings-row-actions"><button class="indicator-settings-btn" data-indicator="vsr" type="button" title="VSR settings" aria-label="VSR settings">&#9881;</button><label class="toggle-switch"><input type="checkbox" id="toggle-vsr" checked /><span class="toggle-slider"></span></label></div>
       </div>
       <div class="settings-row">
+        <span class="settings-label">VSR Dual Zones</span>
+        <div class="settings-row-actions"><button class="indicator-settings-btn" data-indicator="vsrDual" type="button" title="VSR Dual Zones settings" aria-label="VSR Dual Zones settings">&#9881;</button><label class="toggle-switch"><input type="checkbox" id="toggle-vsr-dual" checked /><span class="toggle-slider"></span></label></div>
+      </div>
+      <div class="settings-row">
+        <span class="settings-label">VSR Dual EMA</span>
+        <label class="toggle-switch"><input type="checkbox" id="toggle-vsr-dual-ema" checked /><span class="toggle-slider"></span></label>
+      </div>
+      <div class="settings-row">
+        <span class="settings-label">VSR Dual VIDYA</span>
+        <label class="toggle-switch"><input type="checkbox" id="toggle-vsr-dual-vidya" checked /><span class="toggle-slider"></span></label>
+      </div>
+      <div class="settings-row">
+        <span class="settings-label">VSR Dual VWAP</span>
+        <label class="toggle-switch"><input type="checkbox" id="toggle-vsr-dual-vwap" checked /><span class="toggle-slider"></span></label>
+      </div>
+      <div class="settings-row">
         <span class="settings-label">Volume Profile</span>
         <div class="settings-row-actions"><button class="indicator-settings-btn" data-indicator="vp" type="button" title="Volume Profile settings" aria-label="Volume Profile settings">&#9881;</button><label class="toggle-switch"><input type="checkbox" id="toggle-vpvol" checked /><span class="toggle-slider"></span></label></div>
       </div>
@@ -229,8 +245,18 @@
       </button>
     </div>
     <div id="chart-wrapper">
-      <div id="chart-container"></div>
-      <canvas id="overlay-canvas"></canvas>
+      <div id="chart-main-pane">
+        <div id="chart-container"></div>
+        <canvas id="overlay-canvas"></canvas>
+      </div>
+      <section id="vsr-dual-panel" aria-label="VSR Dual Zones panel">
+        <div class="vsr-dual-header">
+          <span class="vsr-dual-title">VSR Dual Zones</span>
+          <span class="vsr-dual-legend"><i class="vsr1-swatch"></i>VSR 1 <i class="vsr2-swatch"></i>VSR 2 <i class="ema-swatch"></i>EMA <i class="vidya-swatch"></i>VIDYA <i class="vwap-swatch"></i>VWAP</span>
+        </div>
+        <div id="vsr-dual-chart"></div>
+        <canvas id="vsr-dual-canvas"></canvas>
+      </section>
     </div>
   </div>
 

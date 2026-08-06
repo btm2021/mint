@@ -13,7 +13,7 @@ function initChart() {
       mode: 0,
     },
     timeScale: {
-      timeVisible: true,
+      timeVisible: false,
       secondsVisible: false,
     },
     handleScroll: {
@@ -93,13 +93,74 @@ function initChart() {
     visible: showVWAP,
   });
 
+  initVSRDualChart(priceFmt);
+
   chart.timeScale().subscribeVisibleLogicalRangeChange(() => {
     requestAnimationFrame(drawOverlay);
+    requestAnimationFrame(drawVSRDualOverlay);
   });
   // Overlay cần vẽ lại cả khi range không thay đổi (vd: sau khi modal đóng)
   chart.subscribeCrosshairMove(() => {
     requestAnimationFrame(drawOverlay);
   });
+}
+
+function initVSRDualChart(priceFmt) {
+  const container = document.getElementById("vsr-dual-chart");
+  vsrDualCanvas = document.getElementById("vsr-dual-canvas");
+  vsrDualCtx = vsrDualCanvas.getContext("2d");
+  vsrDualChart = LightweightCharts.createChart(container, {
+    layout: { background: { type: "solid", color: "#0B0B0E" }, textColor: "#A9AFBA" },
+    grid: { vertLines: { color: "rgba(42, 46, 57, 0.8)" }, horzLines: { color: "rgba(42, 46, 57, 0.3)" } },
+    crosshair: { mode: 0 },
+    timeScale: { timeVisible: true, secondsVisible: false },
+    handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: true },
+    handleScale: { axisPressedMouseMove: true, mouseWheel: true, pinch: true },
+  });
+  const lineOptions = (color) => ({
+    color, lineWidth: 2, crosshairMarkerVisible: false, lastValueVisible: false,
+    priceLineVisible: false, priceFormat: priceFmt, priceScaleId: "right",
+  });
+  // The VSR boxes are rendered on the overlay canvas, so these transparent
+  // boundary series keep their values in the panel's autoscaled price scale.
+  const zoneScaleOptions = {
+    ...lineOptions("rgba(0, 0, 0, 0)"),
+    lineWidth: 1,
+  };
+  vsrDual1UpperSeries = vsrDualChart.addSeries(LightweightCharts.LineSeries, zoneScaleOptions);
+  vsrDual1LowerSeries = vsrDualChart.addSeries(LightweightCharts.LineSeries, zoneScaleOptions);
+  vsrDual2UpperSeries = vsrDualChart.addSeries(LightweightCharts.LineSeries, zoneScaleOptions);
+  vsrDual2LowerSeries = vsrDualChart.addSeries(LightweightCharts.LineSeries, zoneScaleOptions);
+  vsrDualEmaSeries = vsrDualChart.addSeries(LightweightCharts.LineSeries, { ...lineOptions("#FF9800"), visible: showVSRDualEMA });
+  vsrDualVidyaSeries = vsrDualChart.addSeries(LightweightCharts.LineSeries, { ...lineOptions("#AB47BC"), visible: showVSRDualVIDYA });
+  vsrDualVwapSeries = vsrDualChart.addSeries(LightweightCharts.LineSeries, { ...lineOptions("#00E5FF"), visible: showVSRDualVWAP });
+
+  let syncing = false;
+  chart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+    if (!range || syncing) return;
+    syncing = true;
+    vsrDualChart.timeScale().setVisibleLogicalRange(range);
+    syncing = false;
+  });
+  vsrDualChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+    if (!range || syncing) return;
+    syncing = true;
+    chart.timeScale().setVisibleLogicalRange(range);
+    syncing = false;
+    requestAnimationFrame(drawVSRDualOverlay);
+  });
+}
+
+function setVSRDualData(result) {
+  globalVsrDual = result;
+  vsrDual1UpperSeries.setData(result.data.vsr1Upper);
+  vsrDual1LowerSeries.setData(result.data.vsr1Lower);
+  vsrDual2UpperSeries.setData(result.data.vsr2Upper);
+  vsrDual2LowerSeries.setData(result.data.vsr2Lower);
+  vsrDualEmaSeries.setData(result.data.ema);
+  vsrDualVidyaSeries.setData(result.data.vidya);
+  vsrDualVwapSeries.setData(result.data.vwap);
+  requestAnimationFrame(drawVSRDualOverlay);
 }
 
 function syncCanvasSize() {
@@ -109,12 +170,24 @@ function syncCanvasSize() {
   const height = container.clientHeight;
   chart.resize(width, height);
   const chartWidth = chart.timeScale().width();
-  const chartHeight = height - 26;
+  const chartHeight = height;
   canvas.width = chartWidth;
   canvas.height = chartHeight;
   canvas.style.width = chartWidth + "px";
   canvas.style.height = chartHeight + "px";
+  if (vsrDualChart) {
+    const dualContainer = document.getElementById("vsr-dual-chart");
+    const dualWidth = dualContainer.clientWidth;
+    const dualHeight = dualContainer.clientHeight;
+    vsrDualChart.resize(dualWidth, dualHeight);
+    const dualChartWidth = vsrDualChart.timeScale().width();
+    vsrDualCanvas.width = dualChartWidth;
+    vsrDualCanvas.height = dualHeight;
+    vsrDualCanvas.style.width = dualChartWidth + "px";
+    vsrDualCanvas.style.height = dualHeight + "px";
+  }
   drawOverlay();
+  drawVSRDualOverlay();
 }
 
 function initResizeObserver() {
@@ -311,4 +384,52 @@ function drawOverlay() {
       ctx.fillStyle = "#C3C6CE"; ctx.fillText(`Time: ${tStr}`, tX, tY); tY += lH; ctx.fillText(`Bars: ${bC}`, tX, tY); ctx.restore();
     }
   }
+}
+
+function drawVSRDualOverlay() {
+  if (!vsrDualChart || !vsrDualCtx || !globalVsrDual) return;
+  const timeScale = vsrDualChart.timeScale();
+  const range = timeScale.getVisibleLogicalRange();
+  vsrDualCtx.clearRect(0, 0, vsrDualCanvas.width, vsrDualCanvas.height);
+  if (!range) return;
+  const drawZone = (upperValues, lowerValues, color) => {
+    const first = Math.max(0, Math.floor(range.from));
+    const last = Math.min(upperValues.length - 1, Math.ceil(range.to));
+    vsrDualCtx.fillStyle = color;
+    for (let index = first; index <= last; index++) {
+      const upper = upperValues[index], lower = lowerValues[index];
+      if (!Number.isFinite(upper) || !Number.isFinite(lower)) continue;
+      let start = timeScale.logicalToCoordinate(index);
+      let end = timeScale.logicalToCoordinate(index + 1);
+      if (start === null) start = -1000;
+      if (end === null) end = vsrDualCanvas.width + 1000;
+      const upperY = vsrDualEmaSeries.priceToCoordinate(upper);
+      const lowerY = vsrDualEmaSeries.priceToCoordinate(lower);
+      if (upperY === null || lowerY === null || end <= start) continue;
+      vsrDualCtx.fillRect(start, Math.min(upperY, lowerY), end - start, Math.abs(lowerY - upperY));
+    }
+  };
+  drawZone(globalVsrDual.values.vsr1Upper, globalVsrDual.values.vsr1Lower, "rgba(255, 235, 59, 0.50)");
+  drawZone(globalVsrDual.values.vsr2Upper, globalVsrDual.values.vsr2Lower, "rgba(33, 150, 243, 0.65)");
+  const drawLine = (points, color) => {
+    vsrDualCtx.beginPath();
+    vsrDualCtx.strokeStyle = color;
+    vsrDualCtx.lineWidth = 2;
+    let drawing = false;
+    const first = Math.max(0, Math.floor(range.from) - 1);
+    const last = Math.min(points.length - 1, Math.ceil(range.to) + 1);
+    for (let index = first; index <= last; index++) {
+      const value = points[index];
+      if (!Number.isFinite(value)) { drawing = false; continue; }
+      const x = timeScale.logicalToCoordinate(index);
+      const y = vsrDualEmaSeries.priceToCoordinate(value);
+      if (x === null || y === null) { drawing = false; continue; }
+      if (!drawing) { vsrDualCtx.moveTo(x, y); drawing = true; }
+      else vsrDualCtx.lineTo(x, y);
+    }
+    vsrDualCtx.stroke();
+  };
+  if (showVSRDualEMA) drawLine(globalVsrDual.values.ema, "#FF9800");
+  if (showVSRDualVIDYA) drawLine(globalVsrDual.values.vidya, "#AB47BC");
+  if (showVSRDualVWAP) drawLine(globalVsrDual.values.vwap, "#00E5FF");
 }

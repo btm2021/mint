@@ -489,6 +489,95 @@ function calculateVSR(bars, length = 20, threshold = 10.0) {
   return zones;
 }
 
+// VSR Dual Zones mirrors the custom study described in indicator.md.  Each VSR
+// keeps separate volume/stdev/zone state, while the three price lines share the
+// panel's price scale.
+function calculateVSRDual(bars, options = {}) {
+  const config = {
+    vsr1Length: 10, vsr1Threshold: 10,
+    vsr2Length: 20, vsr2Threshold: 10,
+    emaLength: 20, vidyaLength: 20, cmoLength: 9, vwapLength: 20,
+    ...options,
+  };
+  const values = {
+    vsr1Upper: [], vsr1Lower: [], vsr2Upper: [], vsr2Lower: [],
+    ema: [], vidya: [], vwap: [],
+  };
+  const data = {
+    vsr1Upper: [], vsr1Lower: [], vsr2Upper: [], vsr2Lower: [],
+    ema: [], vidya: [], vwap: [],
+  };
+  const buffers = [[], []];
+  const lengths = [config.vsr1Length, config.vsr2Length];
+  const thresholds = [config.vsr1Threshold, config.vsr2Threshold];
+  const zones = [{ upper: NaN, lower: NaN }, { upper: NaN, lower: NaN }];
+  const previousStdev = [NaN, NaN];
+  const priceChanges = [];
+  const vwapWindow = [];
+  let previousVolume = NaN, previousHigh = NaN, previousLow = NaN, previousClose = NaN;
+  let ema = NaN, vidya = NaN;
+  const stdev = (items) => {
+    if (items.length < 2) return 0;
+    const mean = items.reduce((sum, value) => sum + value, 0) / items.length;
+    return Math.sqrt(items.reduce((sum, value) => sum + (value - mean) ** 2, 0) / items.length);
+  };
+
+  for (let i = 0; i < bars.length; i++) {
+    const bar = bars[i];
+    const change = Number.isFinite(previousVolume) && previousVolume !== 0 ? bar.volume / previousVolume - 1 : 0;
+    const currentStdev = [0, 0];
+    for (let j = 0; j < 2; j++) {
+      buffers[j].push(change);
+      if (buffers[j].length > lengths[j]) buffers[j].shift();
+      currentStdev[j] = stdev(buffers[j]);
+      const signal = previousStdev[j] && buffers[j].length >= 2 ? Math.abs(change / previousStdev[j]) : 0;
+      if (signal > thresholds[j] && Number.isFinite(previousHigh)) {
+        const proposedUpper = Math.max(previousHigh, previousClose);
+        const proposedLower = Math.min(previousLow, previousClose);
+        const zone = zones[j];
+        const overlaps = Number.isFinite(zone.upper) && proposedLower <= zone.upper && zone.lower <= proposedUpper;
+        zone.upper = overlaps ? Math.max(zone.upper, proposedUpper) : proposedUpper;
+        zone.lower = overlaps ? Math.min(zone.lower, proposedLower) : proposedLower;
+      }
+    }
+
+    const alpha = 2 / (config.emaLength + 1);
+    ema = Number.isFinite(ema) ? alpha * bar.close + (1 - alpha) * ema : bar.close;
+    if (i > 0) {
+      priceChanges.push(bar.close - previousClose);
+      if (priceChanges.length > config.cmoLength) priceChanges.shift();
+    }
+    let cmo = 0;
+    if (priceChanges.length >= config.cmoLength) {
+      const gains = priceChanges.reduce((sum, delta) => sum + Math.max(delta, 0), 0);
+      const losses = priceChanges.reduce((sum, delta) => sum + Math.max(-delta, 0), 0);
+      cmo = gains + losses ? 100 * (gains - losses) / (gains + losses) : 0;
+    }
+    const vidyaAlpha = (2 / (config.vidyaLength + 1)) * Math.abs(cmo) / 100;
+    vidya = Number.isFinite(vidya) ? vidyaAlpha * bar.close + (1 - vidyaAlpha) * vidya : bar.close;
+
+    const typicalPrice = (bar.high + bar.low + bar.close) / 3;
+    vwapWindow.push({ price: typicalPrice, volume: bar.volume });
+    if (vwapWindow.length > config.vwapLength) vwapWindow.shift();
+    const volumeTotal = vwapWindow.reduce((sum, item) => sum + item.volume, 0);
+    const vwap = volumeTotal ? vwapWindow.reduce((sum, item) => sum + item.price * item.volume, 0) / volumeTotal : typicalPrice;
+
+    const output = [zones[0].upper, zones[0].lower, zones[1].upper, zones[1].lower, ema, vidya, vwap];
+    const keys = ["vsr1Upper", "vsr1Lower", "vsr2Upper", "vsr2Lower", "ema", "vidya", "vwap"];
+    keys.forEach((key, index) => {
+      values[key].push(output[index]);
+      if (Number.isFinite(output[index])) data[key].push({ time: bar.time, value: output[index] });
+    });
+    previousVolume = bar.volume;
+    previousHigh = bar.high;
+    previousLow = bar.low;
+    previousClose = bar.close;
+    previousStdev[0] = currentStdev[0];
+    previousStdev[1] = currentStdev[1];
+  }
+  return { values, data };
+}
+
 function calculateStandardVWAP(bars, anchor = "day") {
   let vwapData = [];
   if (!bars || bars.length === 0) return vwapData;

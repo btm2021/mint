@@ -356,6 +356,16 @@ function setupIndicatorSettings() {
       { key: "length", label: "Lookback length", type: "number", min: 1, max: 500, step: 1, value: () => VSR_LENGTH },
       { key: "threshold", label: "Threshold", type: "number", min: 1, max: 20, step: 0.1, value: () => VSR_THRESHOLD },
     ] },
+    vsrDual: { title: "VSR Dual Zones", fields: [
+      { key: "vsr1Length", label: "VSR 1 length", type: "number", min: 1, max: 500, step: 1, value: () => VSR_DUAL_1_LENGTH },
+      { key: "vsr1Threshold", label: "VSR 1 threshold", type: "number", min: 1, max: 20, step: 0.1, value: () => VSR_DUAL_1_THRESHOLD },
+      { key: "vsr2Length", label: "VSR 2 length", type: "number", min: 1, max: 500, step: 1, value: () => VSR_DUAL_2_LENGTH },
+      { key: "vsr2Threshold", label: "VSR 2 threshold", type: "number", min: 1, max: 20, step: 0.1, value: () => VSR_DUAL_2_THRESHOLD },
+      { key: "emaLength", label: "Price EMA length", type: "number", min: 1, max: 500, step: 1, value: () => VSR_DUAL_EMA_LENGTH },
+      { key: "vidyaLength", label: "Price VIDYA length", type: "number", min: 1, max: 500, step: 1, value: () => VSR_DUAL_VIDYA_LENGTH },
+      { key: "cmoLength", label: "VIDYA CMO length", type: "number", min: 1, max: 500, step: 1, value: () => VSR_DUAL_CMO_LENGTH },
+      { key: "vwapLength", label: "Price VWAP length", type: "number", min: 1, max: 500, step: 1, value: () => VSR_DUAL_VWAP_LENGTH },
+    ] },
     vp: { title: "Volume Profile", fields: [
       { key: "rows", label: "Price rows", type: "number", min: 4, max: 200, step: 1, value: () => NUM_ROWS },
       { key: "valueArea", label: "Value area (%)", type: "number", min: 1, max: 100, step: 1, value: () => VA_PCT },
@@ -420,6 +430,20 @@ function setupIndicatorSettings() {
       if (length === null || threshold === null) return;
       VSR_LENGTH = length; VSR_THRESHOLD = threshold;
       localStorage.setItem("stat1_vsrLength", length); localStorage.setItem("stat1_vsrThreshold", threshold);
+    } else if (currentIndicator === "vsrDual") {
+      const vsr1Length = numberValue("vsr1Length", 1, 500), vsr1Threshold = numberValue("vsr1Threshold", 1, 20, false);
+      const vsr2Length = numberValue("vsr2Length", 1, 500), vsr2Threshold = numberValue("vsr2Threshold", 1, 20, false);
+      const emaLength = numberValue("emaLength", 1, 500), vidyaLength = numberValue("vidyaLength", 1, 500);
+      const cmoLength = numberValue("cmoLength", 1, 500), vwapLength = numberValue("vwapLength", 1, 500);
+      if ([vsr1Length, vsr1Threshold, vsr2Length, vsr2Threshold, emaLength, vidyaLength, cmoLength, vwapLength].some((value) => value === null)) return;
+      VSR_DUAL_1_LENGTH = vsr1Length; VSR_DUAL_1_THRESHOLD = vsr1Threshold;
+      VSR_DUAL_2_LENGTH = vsr2Length; VSR_DUAL_2_THRESHOLD = vsr2Threshold;
+      VSR_DUAL_EMA_LENGTH = emaLength; VSR_DUAL_VIDYA_LENGTH = vidyaLength;
+      VSR_DUAL_CMO_LENGTH = cmoLength; VSR_DUAL_VWAP_LENGTH = vwapLength;
+      localStorage.setItem("stat1_vsrDual1Length", vsr1Length); localStorage.setItem("stat1_vsrDual1Threshold", vsr1Threshold);
+      localStorage.setItem("stat1_vsrDual2Length", vsr2Length); localStorage.setItem("stat1_vsrDual2Threshold", vsr2Threshold);
+      localStorage.setItem("stat1_vsrDualEmaLength", emaLength); localStorage.setItem("stat1_vsrDualVidyaLength", vidyaLength);
+      localStorage.setItem("stat1_vsrDualCmoLength", cmoLength); localStorage.setItem("stat1_vsrDualVwapLength", vwapLength);
     } else if (currentIndicator === "vp") {
       const rows = numberValue("rows", 4, 200), valueArea = numberValue("valueArea", 1, 100);
       if (rows === null || valueArea === null) return;
