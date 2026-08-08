@@ -124,6 +124,26 @@ Test 2025–2026: **0/21 symbol expectancy âm**.
 - Vị thế đồng thời TB ≈ 12, lúc cao điểm có thể 100–300 → **bắt buộc giới hạn vị thế** + giảm
   risk/lệnh xuống 0.05–0.1%.
 
+### 3.6. Test theo thứ hạng volume × timeframe (test_ranks.js, 2026-08-08)
+
+Thông số VBT giữ nguyên (tối ưu 15m). Symbol mới niêm yết (KORU 06/2026, LLY 07/2026, ESP 02/2026)
+có mẫu quá nhỏ (N=3–35) → chỉ tham khảo.
+
+| Nhóm (hạng) | Symbol | TF | N | WIN | ExpR | PF |
+|---|---|---|---|---|---|---|
+| TOP (8-9) | BICOUSDT | 15m | 77 | 71.4% | +0.36R | 2.17 |
+| TOP (8-9) | BICOUSDT | 5m | 148 | 68.2% | +0.36R | 2.27 |
+| TRUNG (100-101) | XLMUSDT | 15m | 137 | 71.5% | +0.38R | 2.35 |
+| TRUNG (100-101) | XLMUSDT | 5m | 159 | 57.2% | +0.27R | 2.05 |
+| SIÊU BÉ (300-301) | PHAUSDT | 15m | 40 | 65.0% | +0.23R | 1.61 |
+| SIÊU BÉ (300-301) | PHAUSDT | 5m | 117 | 70.1% | +0.40R | 2.55 |
+| SIÊU BÉ (300-301) | LLYUSDT | 5m | 17 | 17.6% | -0.11R | 0.59 |
+
+Kết luận: (1) **15m hoạt động tốt ở cả 3 nhóm volume** — chiến lược không phụ thuộc thứ hạng;
+(2) **5m giữ nguyên thông số vẫn chạy** (BICO 68.2%, PHA 70.1%) nhưng XLM giảm 71.5% → 57.2%
+→ cần tái chuẩn hóa W/TP/SL cho 5m (xem prompt.md H5); (3) LLY 5m âm (mẫu nhỏ + thao túng)
+→ symbol siêu nhỏ mới niêm yết không đủ tin cậy; (4) mẫu nhỏ (N<50) không kết luận được.
+
 ---
 
 ## 4. TỔ CHỨC HỆ THỐNG
@@ -228,6 +248,7 @@ Nến 15m (OHLCV)
 
 | Ngày | Sự kiện |
 |---|---|
+| 2026-08-08 | Test thứ hạng volume × timeframe (test_ranks.js): 15m dương 6/6, 5m 5/6 (chi tiết mục 3.6) |
 | 2026-08-08 | Hoàn tất backtest chuẩn `backtest_final.js` — xác minh OOS 68.5% win |
 | 2026-08-08 | Tối ưu lệnh sai (3 lệnh cấm) — win 57.1% → 70.0% |
 | 2026-08-08 | Xác lập hệ thống 2 ATRBot + VSR + TP2/SL2 (system.js) |
