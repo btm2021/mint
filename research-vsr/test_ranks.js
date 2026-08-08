@@ -16,9 +16,9 @@ const C = {
   R: 2,
 };
 const SYMBOLS = {
-  "TOP (hạng 8-9)": ["KORUUSDT", "BICOUSDT"],
-  "TRUNG (hạng 100-101)": ["XLMUSDT", "ESPUSDT"],
-  "SIÊU BÉ (hạng 300-301)": ["LLYUSDT", "PHAUSDT"],
+  "TOP (hạng 9-10)": ["SKHYNIXUSDT", "KORUUSDT"],
+  "TRUNG (hạng 99-100)": ["RKLBUSDT", "XAUTUSDT"],
+  "BÉ (hạng 200-201)": ["BASEDUSDT", "SAGAUSDT"],
 };
 const INTERVALS = ["5m", "15m"];
 
