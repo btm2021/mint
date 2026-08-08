@@ -102,6 +102,11 @@ Rate limit: delay 450ms/request + backoff 429/418 tự động (không cần can
 
 ## 5. KẾT QUẢ ĐÃ KIỂM CHỨNG (tóm tắt — dùng để đối chiếu khi tái lập)
 
+> **HIỆN TRẠNG:** các mục 5.3e–5.3h dẫn đến CHIẾN LƯỢC VBT (xem strat.md).
+> Các mục 5.1–5.3d là chuỗi nghiên cứu lịch sử — nhiều kết luận vẫn đúng, một số đã được
+> thay thế (đánh dấu ⚠️). Khi báo cáo mới, luôn tham chiếu chiến lược cuối cùng, không
+> lấy lại kết luận cũ đã bị thay thế (ví dụ: "zone giữ 2/3" đã bị hiệu chỉnh ở 5.2b/5.2c).
+
 ### 5.1. Giá vs zone (7.883 điểm quyết định, 10 symbol, VSR 10,10)
 - Nến đóng trong zone chỉ 5-7% thời gian; zone rộng TB 0.4-0.5% giá.
 - Vị trí close trong zone là tín hiệu mạnh nhất cho HƯỚNG breakout:
@@ -270,21 +275,32 @@ Thông số đầy đủ: phí+slippage 0.14%/lệnh | risk 1%/lệnh (vị th�
 6. Khi tải dữ liệu mới: luôn giữ `delayMs=450` + backoff; cache compact
    `[time,open,high,low,close,volume]`; SUI/PEPE/ARB/OP/APT không đủ 200k nến (niêm yết muộn).
 
-## 7. HƯỚNG TIẾP TỤC ĐỀ XUẤT (ưu tiên theo giá trị)
+## 7. HƯỚNG TIẾP TỤC ĐỀ XUẤT (roadmap — ưu tiên theo giá trị, cập nhật 2026-08)
 
-1. **Backtest nâng cao**: vào lệnh LIMIT tại biên zone (lower khi test hỗ trợ, upper khi test
-   kháng cự) thay vì market tại close nến test; TP/SL theo ATR (TP ~1×ATR, SL ~0.5×ATR);
-   đo win rate, avg R:R, drawdown. Mục tiêu: biến edge 80% hướng thành PnL dương sau phí.
-2. **Out-of-sample**: train 2020-2024, test 2025-2026 (cắt dữ liệu theo thời gian) để xác nhận
-   score ≥ 4 không bị overfit.
-3. **Tối ưu ngưỡng score**: thử các ngưỡng khác (≥3, ≥4, ≥5) kèm sample size; kiểm tra
-   threshold tối ưu của VSR cho từng symbol (10, 15, 20).
-4. **Thêm timeframe**: 1h, 4h — kiểm tra tính ổn định của score và alignment (K theo nến
-   nên đổi tương ứng, ví dụ K=8 nến 1h ≈ 8h).
-5. **Feature mới**: khoảng cách close đến biên zone khi test; VSR zone cũ hơn 1 đời (zone
-   trước đó) làm vùng hợp lưu thay vì zone đang hoạt động; phân loại nến test (doji, pin bar).
-6. **Cảnh báo rủi ro**: thêm mô phỏng với slippage 0.02-0.05% và funding fee nếu trade futures.
-7. **Cập nhật PineScript**: thêm tùy chọn hiển thị score thang màu 6 bậc thay vì 3 trạng thái.
+**Chiến lược VBT (strat.md) — các bước phát triển tiếp:**
+1. **Mô phỏng giới hạn vị thế đồng thời (N=5/10/20)** trên 600 symbol ước tính — vì 21 symbol đã
+   có lúc 10 vị thế chồng lấp; cần xác định cách ưu tiên tín hiệu (score cao trước) và ảnh hưởng
+   đến winrate/PnL khi bỏ lỡ lệnh.
+2. **Scale 600 symbol**: tải thêm ~80-100 symbol nữa để ước lượng tần suất lệnh/ngày thực tế
+   (dự kiến ~35-70 lệnh/ngày), xác nhận per-symbol phân bố tần suất của altcoin nhỏ.
+3. **Slippage & funding thực tế**: mô phỏng slippage 0.02-0.05%/lệnh + funding fee (futures)
+   → kiểm tra edge còn lại bao nhiêu.
+4. **TP/SL thích ứng ATR**: bản ATR-based (A3ATR/SL1.5ATR: win 44.6%, PF 1.39) an toàn hơn khi
+   volatility đổi — cần backtest dạng "SL theo ATR, TP theo R:R cố định 1:1".
+5. **Timeframe khác**: 1h, 4h — tái chuẩn hóa W (confirm/pull) và TP/SL theo nến; kiểm tra tính
+   ổn định của "vào nhanh ≤4 nến" và "không chạm biên zone".
+6. **Cải thiện entry**: thêm bộ lọc volume entry (>0.8x), giờ UTC (bỏ 18-23), EMA slope cùng hướng
+   — các bucket lỗ phụ đã tìm thấy nhưng chưa đưa vào vì giảm mẫu.
+7. **Cảnh báo rủi ro & live**: theo dõi online (WebSocket), alert khi có tín hiệu; test paper
+   trước khi live; cập nhật PineScript cho hệ thống VBT (bias + entry marker + zone màu).
+8. **Đo độ bền theo thời gian**: chia nhỏ theo năm (2021/2022/2023/2024/2025) xem winrate từng
+   năm ổn định không (đã thấy 66-80% — kiểm chứng thêm bằng rolling window).
+
+**Nghiên cứu nền (các hướng còn mở từ chuỗi nghiên cứu cũ):**
+9. Tối ưu ngưỡng VSR theo từng symbol (threshold 10/15/20) và score 0-6 chi tiết hơn.
+10. Feature mới: khoảng cách close đến biên zone khi test; zone đời trước làm vùng hợp lưu;
+    phân loại nến test (doji, pin bar).
+11. Phân cụm tín hiệu theo giờ phiên (Asia/EU/US) để quản lý kỳ vọng theo thời gian.
 
 ## 8. QUY ƯỚC BÁO CÁO
 
