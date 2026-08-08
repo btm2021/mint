@@ -1,0 +1,181 @@
+//@version=5
+// ============================================================
+// VSR Zone Classifier (R3b Score) — Phân loại zone ĐÁY/ĐỈNH/XUYÊN
+// ------------------------------------------------------------
+// Tái hiện chính xác logic VSR từ js/indicators.js (calculateVSR):
+//   change  = V_t / V_(t-1) - 1
+//   stdev   = population stdev của change trong cửa sổ Length
+//   signal  = |change / stdev_(t-1)|  ;  signal > Threshold -> tạo/gộp zone
+// Zone mới = [max(H,C), min(L,C)] của nến trước nến spike.
+//
+// MÀU ZONE (dựa trên nghiên cứu 20 symbol ~4M nến 15m):
+//   ĐỎ   : score >= 4  -> dự đoán zone GIỮ (BẬT LẠI) — hit ~80%
+//   XANH : score <= 1  -> cảnh báo XUYÊN QUA (~43-46%)
+//   VÀNG : 2-3 điểm    -> trung lập (mặc định giữ ~67%)
+//
+// SCORE 0-6 — mỗi điều kiện đúng cộng 1 điểm:
+//   1. Xuôi EMA20 : test hỗ trợ (giá từ trên xuống) mà close > EMA20,
+//                   hoặc test kháng cự (giá từ dưới lên) mà close < EMA20
+//   2. Xuôi VWAP phiên : tương tự với VWAP ngày
+//   3. Volume nến test <= 1x trung bình 20 nến trước (test "lặng lẽ")
+//   4. Zone CŨ : tuổi zone > 12 nến kể từ khi tạo
+//   5. Zone RỘNG : độ rộng > 0.7% giá
+//   6. Zone đã GỘP : >= 1 lần spike được gộp vào chung vùng
+// ============================================================
+indicator("VSR Zone Classifier (R3b)", overlay=true, max_labels_count=500, max_bars_back=500)
+
+// ---------- Inputs ----------
+vsrLen        = input.int(10, "VSR Length", minval=1)
+vsrThr        = input.float(10.0, "VSR Threshold", minval=0.1, step=0.5)
+emaLen        = input.int(20, "EMA Length", minval=1)
+volAvgLen     = input.int(20, "Volume Avg Length", minval=1)
+zoneAgeOld    = input.int(12, "Zone Age Old (bars)", minval=1)
+widthPctThr   = input.float(0.7, "Zone Width Threshold (%)", minval=0.1, step=0.1)
+bounceScore   = input.int(4, "Score >= -> BẬT (ĐỎ)", minval=1, maxval=6)
+throughScore  = input.int(1, "Score <= -> XUYÊN (XANH)", minval=0, maxval=3)
+showLabels    = input.bool(true, "Hiện nhãn score tại nến test")
+showEmaVwap   = input.bool(true, "Hiện EMA20 + VWAP phiên")
+
+// ---------- EMA20 ----------
+ema20 = ta.ema(close, emaLen)
+
+// ---------- VWAP phiên (reset theo ngày, giống calculateStandardVWAP) ----------
+var float vwapVal  = na
+var float vsumVol  = 0.0
+var float vsumPV   = 0.0
+var int   dkey     = -1
+dk = dayofmonth + month * 100 + year * 10000
+if dk != dkey
+    dkey     := dk
+    vsumVol  := 0.0
+    vsumPV   := 0.0
+tp = hlc3
+vsumPV += tp * volume
+vsumVol += volume
+vwapVal := vsumVol > 0 ? vsumPV / vsumVol : tp
+
+// ---------- VSR core (state) ----------
+var float prevVolume = na
+var float prevHigh   = na
+var float prevLow    = na
+var float prevClose  = na
+var float prevStdev  = na
+var float upper      = na
+var float lower      = na
+var int   zoneStart  = -1
+var int   mergeCnt   = 0
+var array<float> volChg = array.new_float()
+
+change = 0.0
+if not na(prevVolume) and prevVolume != 0
+    change := volume / prevVolume - 1
+
+array.push(volChg, change)
+if array.size(volChg) > vsrLen
+    array.shift(volChg)
+
+stdev = 0.0
+if array.size(volChg) >= 2
+    mean = array.avg(volChg)
+    sq = 0.0
+    for i = 0 to array.size(volChg) - 1
+        d = array.get(volChg, i) - mean
+        sq += d * d
+    stdev := math.sqrt(sq / array.size(volChg))
+
+signal = 0.0
+if not na(prevStdev) and prevStdev != 0 and array.size(volChg) >= 2
+    signal := math.abs(change / prevStdev)
+
+if signal > vsrThr and not na(prevHigh)
+    pUp = math.max(prevHigh, prevClose)
+    pLo = math.min(prevLow, prevClose)
+    overlap = not na(upper) and not na(lower) and pLo <= upper and lower <= pUp
+    if overlap
+        mUp = math.max(upper, pUp)
+        mLo = math.min(lower, pLo)
+        if mUp != upper or mLo != lower
+            upper     := mUp
+            lower     := mLo
+            mergeCnt  += 1
+            zoneStart := bar_index
+    else
+        upper     := pUp
+        lower     := pLo
+        mergeCnt  := 0
+        zoneStart := bar_index
+
+prevVolume := volume
+prevHigh   := high
+prevLow    := low
+prevClose  := close
+prevStdev  := stdev
+
+// ---------- Test bar & score ----------
+isTest = not na(upper) and not na(lower) and bar_index > zoneStart \
+     and (prevClose > upper or prevClose < lower) \
+     and high >= lower and low <= upper
+
+approachAbove = prevClose > upper
+alignedEma    = approachAbove ? close > ema20 : close < ema20
+alignedVwap   = approachAbove ? close > vwapVal : close < vwapVal
+
+volAvg   = ta.sma(volume[1], volAvgLen)
+volRatio = volAvg > 0 ? volume / volAvg : na
+
+zoneAge = bar_index - zoneStart
+wPct    = (upper - lower) / close * 100
+
+score = 0
+score += alignedEma ? 1 : 0
+score += alignedVwap ? 1 : 0
+score += (volRatio <= 1.0) ? 1 : 0
+score += (zoneAge > zoneAgeOld) ? 1 : 0
+score += (wPct > widthPctThr) ? 1 : 0
+score += (mergeCnt >= 1) ? 1 : 0
+
+// ---------- Trạng thái màu: 1 = ĐỎ (BẬT), -1 = XANH (XUYÊN), 0 = VÀNG ----------
+var int state = 0
+if isTest
+    if score >= bounceScore
+        state := 1
+    else if score <= throughScore
+        state := -1
+    else
+        state := 0
+
+if bar_index == zoneStart
+    state := 0
+
+// ---------- Vẽ ----------
+uRed  = state == 1 ? upper : na
+lRed  = state == 1 ? lower : na
+uBlue = state == -1 ? upper : na
+lBlue = state == -1 ? lower : na
+uYel  = state == 0 ? upper : na
+lYel  = state == 0 ? lower : na
+
+pUR = plot(uRed, display=display.none)
+pLR = plot(lRed, display=display.none)
+pUB = plot(uBlue, display=display.none)
+pLB = plot(lBlue, display=display.none)
+pUY = plot(uYel, display=display.none)
+pLY = plot(lYel, display=display.none)
+
+fill(pUR, pLR, color=color.new(color.red, 85))
+fill(pUB, pLB, color=color.new(color.blue, 85))
+fill(pUY, pLY, color=color.new(color.yellow, 85))
+
+edgeCol = state == 1 ? color.new(color.red, 0) : state == -1 ? color.new(color.blue, 0) : color.new(color.yellow, 0)
+plot(upper, "VSR Upper", color=edgeCol, linewidth=1)
+plot(lower, "VSR Lower", color=edgeCol, linewidth=1)
+
+plot(ema20, "EMA20", color=color.new(color.orange, 0), linewidth=1, display=showEmaVwap ? display.all : display.none)
+plot(vwapVal, "VWAP ngày", color=color.new(color.aqua, 0), linewidth=1, display=showEmaVwap ? display.all : display.none)
+
+if showLabels and isTest and (score >= bounceScore or score <= throughScore)
+    lblTxt = score >= bounceScore ? "BẬT " + str.tostring(score) : "XUYÊN " + str.tostring(score)
+    label.new(bar_index, approachAbove ? lower : upper, lblTxt,
+         color=score >= bounceScore ? color.new(color.red, 0) : color.new(color.blue, 0),
+         style=approachAbove ? label.style_label_up : label.style_label_down,
+         textcolor=color.white, size=size.small)

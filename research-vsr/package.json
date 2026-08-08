@@ -1,0 +1,9 @@
+{
+  "name": "research-vsr",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Nghiên cứu VSR (Volume Spike Reversal) zones: khi nào giá chạy trong zone, khi nào breakout, có dự đoán được không",
+  "scripts": {
+    "start": "node main.js"
+  }
+}
