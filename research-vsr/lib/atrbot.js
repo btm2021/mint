@@ -1,6 +1,5 @@
-// Tái hiện trạng thái trend của ATRBot (mặc định: EMA(close,30) + ATR(14) x2)
-// từ calculateATRBot trong js/indicators.js — chỉ lấy state (1 = uptrend, -1 = downtrend).
-export function calculateTrendStates(bars, atrLen = 14, maLen = 30, mult = 2) {
+// Lõi chung: trả trail1, trail2, states
+function core(bars, atrLen, maLen, mult, maType) {
   const n = bars.length;
   const alpha = 2 / (maLen + 1);
   const trail1 = new Array(n);
@@ -15,7 +14,22 @@ export function calculateTrendStates(bars, atrLen = 14, maLen = 30, mult = 2) {
           Math.abs(bars[i].low - bars[i - 1].close),
         );
     atr[i] = i === 0 ? tr : (atr[i - 1] * (atrLen - 1) + tr) / atrLen;
-    trail1[i] = i === 0 ? bars[i].close : alpha * bars[i].close + (1 - alpha) * trail1[i - 1];
+
+    const value = bars[i].close;
+    if (maType === "vidya") {
+      if (i === 0) { trail1[i] = value; continue; }
+      let gains = 0, losses = 0;
+      for (let j = Math.max(1, i - maLen + 1); j <= i; j++) {
+        const ch = bars[j].close - bars[j - 1].close;
+        if (ch > 0) gains += ch;
+        else losses -= ch;
+      }
+      const movement = gains + losses;
+      const cmo = movement === 0 ? 0 : Math.abs((gains - losses) / movement);
+      trail1[i] = alpha * cmo * value + (1 - alpha * cmo) * trail1[i - 1];
+    } else {
+      trail1[i] = i === 0 ? value : alpha * value + (1 - alpha) * trail1[i - 1];
+    }
   }
 
   const trail2 = new Array(n);
@@ -32,5 +46,14 @@ export function calculateTrendStates(bars, atrLen = 14, maLen = 30, mult = 2) {
     }
     states[i] = t1 > trail2[i] ? 1 : -1;
   }
-  return states;
+  return { states, trail1, trail2, atr };
+}
+
+export function calculateTrendStates(bars, atrLen = 14, maLen = 30, mult = 2, maType = "ema") {
+  return core(bars, atrLen, maLen, mult, maType).states;
+}
+
+// Trả đủ { states, trail1, trail2, atr } — dùng để đo sức mạnh trend (|trail1-trail2|/price)
+export function calculateTrendFull(bars, atrLen = 14, maLen = 30, mult = 2, maType = "ema") {
+  return core(bars, atrLen, maLen, mult, maType);
 }
