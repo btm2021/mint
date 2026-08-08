@@ -2,7 +2,12 @@
 
 > Tài liệu này ghi lại toàn bộ bối cảnh, phương pháp, kết quả và cách tiếp tục nghiên cứu.
 > Mọi thông tin trong đây đã được kiểm chứng bằng dữ liệu Binance Futures thực tế
-> (20 symbol, ~4 triệu nến 15m, giai đoạn 2020-11 → 2026-08).
+> (21 symbol, ~4 triệu nến 15m, giai đoạn 2020-11 → 2026-08).
+>
+> **👉 CHIẾN LƯỢC HIỆN TẠI: đọc `strat.md` trước** — tài liệu chiến lược chính thức "VBT"
+> (VSR-Bias Trend) gồm thông số đầy đủ, kết quả nghiên cứu, cách tổ chức và cách dùng indicator.
+> Các mục 5.3e → 5.3h dưới đây là cơ sở khoa học của chiến lược đó; các mục 5.1–5.3d là lịch sử
+> nghiên cứu (một số kết luận đã bị thay thế — xem ghi chú ⚠️).
 
 ---
 
