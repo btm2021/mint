@@ -384,6 +384,9 @@ function drawOverlay() {
       ctx.fillStyle = "#C3C6CE"; ctx.fillText(`Time: ${tStr}`, tX, tY); tY += lH; ctx.fillText(`Bars: ${bC}`, tX, tY); ctx.restore();
     }
   }
+
+  // Pass 5: VBT Strategy
+  drawStrategyOverlay();
 }
 
 function drawVSRDualOverlay() {

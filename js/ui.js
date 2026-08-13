@@ -337,6 +337,61 @@ function setupIndicatorSettings() {
   ];
   const sourceOptions = [["open", "Open"], ["high", "High"], ["low", "Low"], ["close", "Close"], ["hl2", "HL2"], ["hlc3", "HLC3"], ["ohlc4", "OHLC4"]];
 
+  // Xây danh sách field cho strategy đang active — từ defaults + colors
+  function strategyFields() {
+    const def = STRATEGY.current;
+    if (!def) return [];
+    const c = () => STRAT_CFG || def.defaults;
+    const showBase = def.defaults.showBaseFields !== false; // SMC tắt field ATRBot chung
+    const base = showBase ? [
+      ...(def.defaults.mode ? [{ key: "mode", label: "Entry mode", type: "select", options: [["V2", "V2 - market tai close cf"], ["V7", "V7 - cho pullback EMA20"]], value: () => c().mode }] : []),
+      { key: "slowAtr", label: "ATR chậm (BIAS) — length", type: "number", min: 1, max: 500, step: 1, value: () => c().slow.atrLen },
+      { key: "slowMult", label: "ATR chậm — multiplier", type: "number", min: 0.1, max: 10, step: 0.1, value: () => c().slow.mult },
+      { key: "slowMa", label: "ATR chậm — MA length", type: "number", min: 1, max: 500, step: 1, value: () => c().slow.maLen },
+      { key: "fastAtr", label: "ATR nhanh (ENTRY) — length", type: "number", min: 1, max: 500, step: 1, value: () => c().fast.atrLen },
+      { key: "fastMult", label: "ATR nhanh — multiplier", type: "number", min: 0.1, max: 10, step: 0.1, value: () => c().fast.mult },
+      { key: "fastMa", label: "ATR nhanh — MA length", type: "number", min: 1, max: 500, step: 1, value: () => c().fast.maLen },
+      { key: "vsrLen", label: "VSR 1 — length", type: "number", min: 1, max: 500, step: 1, value: () => c().vsrLen },
+      { key: "vsrThr", label: "VSR 1 — threshold", type: "number", min: 1, max: 20, step: 0.1, value: () => c().vsrThr },
+      { key: "vsr2Len", label: "VSR 2 — length", type: "number", min: 0, max: 500, step: 1, value: () => c().vsr2Len },
+      { key: "vsr2Thr", label: "VSR 2 — threshold", type: "number", min: 1, max: 20, step: 0.1, value: () => c().vsr2Thr },
+      { key: "showVsr2", label: "Hiện VSR 2", type: "select", options: [["0", "Off"], ["1", "On"]], value: () => String(c().showVsr2 ? 1 : 0) },
+      { key: "emaLen", label: "EMA length", type: "number", min: 0, max: 500, step: 1, value: () => c().emaLen },
+      { key: "showEma", label: "Hiện EMA", type: "select", options: [["0", "Off"], ["1", "On"]], value: () => String(c().showEma ? 1 : 0) },
+      ...(def.defaults.wConfirm ? [{ key: "wConfirm", label: "Confirm window", type: "number", min: 2, max: 30, step: 1, value: () => c().wConfirm }] : []),
+      ...(def.defaults.maxCycleAge ? [{ key: "maxCycleAge", label: "Max cycle age", type: "number", min: 1, max: 10, step: 1, value: () => c().maxCycleAge }] : []),
+      ...(def.defaults.maxPullATR ? [{ key: "maxPullATR", label: "Max pull depth (×ATR)", type: "number", min: 0, max: 2, step: 0.05, value: () => c().maxPullATR }] : []),
+      { key: "tp1", label: "TP1 (%)", type: "number", min: 0.1, max: 50, step: 0.5, value: () => c().tp1 },
+      { key: "frac1", label: "TP1 fraction", type: "number", min: 0.1, max: 1, step: 0.01, value: () => c().frac1 },
+      { key: "tp2", label: "TP2 (%)", type: "number", min: 0, max: 50, step: 0.5, value: () => c().tp2 },
+      { key: "sl1", label: "SL (%)", type: "number", min: 0.1, max: 20, step: 0.5, value: () => c().sl1 },
+      { key: "feePct", label: "Cost (%/round-trip)", type: "number", min: 0, max: 1, step: 0.01, value: () => c().feePct },
+      ...(def.defaults.strict !== undefined ? [{ key: "strict", label: "Strict filters (vol>=0.8, ATR>=0.3%)", type: "select", options: [["0", "Off"], ["1", "On"]], value: () => String(c().strict ? 1 : 0) }] : []),
+      { key: "cVsr1", label: "Màu VSR 1", type: "color", value: () => c().colors.vsr1 },
+      { key: "cVsr2", label: "Màu VSR 2", type: "color", value: () => c().colors.vsr2 },
+      { key: "cSlowUp", label: "Màu ATR chậm UP", type: "color", value: () => c().colors.slowUp },
+      { key: "cSlowDown", label: "Màu ATR chậm DOWN", type: "color", value: () => c().colors.slowDown },
+      { key: "cFastUp", label: "Màu ATR nhanh UP", type: "color", value: () => c().colors.fastUp },
+      { key: "cFastDown", label: "Màu ATR nhanh DOWN", type: "color", value: () => c().colors.fastDown },
+      { key: "cEma", label: "Màu EMA", type: "color", value: () => c().colors.ema },
+      { key: "cEntry", label: "Màu ENTRY", type: "color", value: () => c().colors.entry },
+      { key: "cSl", label: "Màu SL", type: "color", value: () => c().colors.sl },
+      { key: "cTp1", label: "Màu TP1", type: "color", value: () => c().colors.tp1 },
+      { key: "cTp2", label: "Màu TP2", type: "color", value: () => c().colors.tp2 },
+    ] : [];
+    const fields = [
+      ...base,
+      // ---- Stat Original hiển thị ----
+      ...(def.defaults.showBiasCloud !== undefined ? [
+        { key: "showBiasCloud", label: "Cloud ATRBot BIAS", type: "select", options: [["1", "On"], ["0", "Off"]], value: () => String(c().showBiasCloud ? 1 : 0) },
+        { key: "showEntryCloud", label: "Cloud ATRBot ENTRY", type: "select", options: [["1", "On"], ["0", "Off"]], value: () => String(c().showEntryCloud ? 1 : 0) },
+        { key: "showVsr", label: "VSR zones", type: "select", options: [["1", "On"], ["0", "Off"]], value: () => String(c().showVsr ? 1 : 0) },
+        { key: "showEntries", label: "Điểm vào lệnh (flip)", type: "select", options: [["1", "On"], ["0", "Off"]], value: () => String(c().showEntries ? 1 : 0) },
+      ] : []),
+    ];
+    return fields;
+  }
+
   const configs = {
     atr1: { title: "ATR Bot 1", fields: [
       { key: "source", label: "Source", type: "select", options: sourceOptions, value: () => ATR_SOURCE },
@@ -373,6 +428,7 @@ function setupIndicatorSettings() {
     vwap: { title: "VWAP", fields: [
       { key: "anchor", label: "Reset anchor", type: "select", options: [["day", "Daily"], ["week", "Weekly"], ["month", "Monthly"]], value: () => VWAP_ANCHOR },
     ] },
+    statOriginal: { title: "Stat Original", fields: strategyFields() },
     chartData: { title: "Chart data", fields: [
       { key: "barLimit", label: "Stored candles", type: "number", min: MIN_BAR_LIMIT, max: MAX_BAR_LIMIT, step: 500, value: () => LIMIT },
     ] },
@@ -392,6 +448,9 @@ function setupIndicatorSettings() {
     form.innerHTML = config.fields.map((field) => {
       if (field.type === "select") {
         return `<label>${field.label}<select name="${field.key}">${field.options.map(([value, label]) => `<option value="${value}"${value === field.value() ? " selected" : ""}>${label}</option>`).join("")}</select></label>`;
+      }
+      if (field.type === "color") {
+        return `<label class="color-field">${field.label}<input name="${field.key}" type="color" value="${field.value()}" /></label>`;
       }
       return `<label>${field.label}<input name="${field.key}" type="number" min="${field.min}" max="${field.max}" step="${field.step}" value="${field.value()}" required /></label>`;
     }).join("");
@@ -452,6 +511,48 @@ function setupIndicatorSettings() {
     } else if (currentIndicator === "vwap") {
       VWAP_ANCHOR = new FormData(form).get("anchor");
       localStorage.setItem("stat1_vwapAnchor", VWAP_ANCHOR);
+    } else if (currentIndicator === "statOriginal") {
+      const fd = new FormData(form);
+      const num = (key, min, max) => numberValue(key, min, max, false);
+      const vals = {
+        slow: {
+          atrLen: num("slowAtr", 1, 500),
+          mult: num("slowMult", 0.1, 10),
+          maLen: num("slowMa", 1, 500),
+        },
+        fast: {
+          atrLen: num("fastAtr", 1, 500),
+          mult: num("fastMult", 0.1, 10),
+          maLen: num("fastMa", 1, 500),
+        },
+        vsrLen: num("vsrLen", 1, 500),
+        vsrThr: num("vsrThr", 1, 20),
+        vsr2Len: num("vsr2Len", 0, 500),
+        vsr2Thr: num("vsr2Thr", 1, 20),
+        emaLen: num("emaLen", 0, 500),
+        tp1: num("tp1", 0.1, 50),
+        frac1: num("frac1", 0.1, 1),
+        tp2: num("tp2", 0, 50),
+        sl1: num("sl1", 0.1, 20),
+        feePct: num("feePct", 0, 1),
+      };
+      if ([vals.slow.atrLen, vals.slow.mult, vals.slow.maLen, vals.fast.atrLen, vals.fast.mult, vals.fast.maLen,
+        vals.vsrLen, vals.vsrThr, vals.vsr2Len, vals.vsr2Thr, vals.emaLen, vals.tp1, vals.frac1, vals.tp2, vals.sl1, vals.feePct].some((v) => v === null)) return;
+      STRAT_CFG.slow = { ...STRAT_CFG.slow, ...vals.slow };
+      STRAT_CFG.fast = { ...STRAT_CFG.fast, ...vals.fast };
+      STRAT_CFG.vsrLen = vals.vsrLen; STRAT_CFG.vsrThr = vals.vsrThr;
+      STRAT_CFG.vsr2Len = vals.vsr2Len; STRAT_CFG.vsr2Thr = vals.vsr2Thr;
+      STRAT_CFG.emaLen = vals.emaLen;
+      STRAT_CFG.tp1 = vals.tp1; STRAT_CFG.frac1 = vals.frac1; STRAT_CFG.tp2 = vals.tp2; STRAT_CFG.sl1 = vals.sl1;
+      STRAT_CFG.feePct = vals.feePct;
+      STRAT_CFG.showVsr2 = fd.get("showVsr2") === "1";
+      STRAT_CFG.showEma = fd.get("showEma") === "1";
+      const colorMap = { cVsr1: "vsr1", cVsr2: "vsr2", cSlowUp: "slowUp", cSlowDown: "slowDown", cFastUp: "fastUp", cFastDown: "fastDown", cEma: "ema", cEntry: "entry", cSl: "sl", cTp1: "tp1", cTp2: "tp2" };
+      for (const [key, prop] of Object.entries(colorMap)) {
+        const v = fd.get(key);
+        if (/^#[0-9a-fA-F]{6}$/.test(v)) STRAT_CFG.colors[prop] = v;
+      }
+      saveStrategyCfg();
     } else if (currentIndicator === "chartData") {
       const barLimit = numberValue("barLimit", MIN_BAR_LIMIT, MAX_BAR_LIMIT);
       if (barLimit === null) return;
@@ -470,6 +571,8 @@ function setupIndicatorSettings() {
     button.addEventListener("click", () => openModal(button.dataset.indicator));
   });
   document.getElementById("chart-data-settings-btn").addEventListener("click", () => openModal("chartData"));
+  const strategySettingsBtn = document.getElementById("strategy-settings-btn");
+  if (strategySettingsBtn) strategySettingsBtn.addEventListener("click", () => openModal(STRATEGY.current ? STRATEGY.current.key : ""));
   // Form values stay as a draft. Only the explicit Apply & Load button commits them.
   form.addEventListener("submit", (event) => event.preventDefault());
   form.addEventListener("keydown", (event) => { if (event.key === "Enter") event.preventDefault(); });

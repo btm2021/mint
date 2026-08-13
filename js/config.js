@@ -119,3 +119,14 @@ let vwapSeries;
 let allSymbols = [];
 let analyseChartInstance = null;
 let analyseModeActive = false;
+
+// ============================================================
+// STRATEGY STATE — strategy được register trong file riêng,
+// config nạp qua strategy-lib.js. Ở đây chỉ giữ biến dùng chung.
+// ============================================================
+
+let showStrategy = true;          // strategy của trang này luôn bật
+let STRAT_CFG = null;             // config strategy — nạp trong main.js sau khi register
+let globalStrategyTrades = [];
+let globalStratIndicators = null;
+let strategyMarkersPlugin = null;

@@ -72,12 +72,19 @@ function setupInteractions() {
       return;
     }
 
+    if (!isTouch() && showStrategy && !stratModalOpen) {
+      const tradeHit = hitTestStrategyTrade(logical, price);
+      if (tradeHit) {
+        openStrategyTradeModal(tradeHit);
+        return;
+      }
+    }
+
     const hit = hitTestRects(logical, price);
     if (hit) {
       selectedRectIndex = -1;
       selectedVpIndex = -1;
-      if (hit.type === "rect") {
-        selectedRectIndex = hit.idx;
+      if (hit.type === "rect") {        selectedRectIndex = hit.idx;
         const r = drawnRects[hit.idx];
         rectDragState.active = true;
         rectDragState.isVp = false;
@@ -211,17 +218,20 @@ function setupInteractions() {
   chart.subscribeCrosshairMove((param) => {
     if (param.logical !== undefined && param.logical !== null) {
       lastCrosshairLogical = param.logical;
+      if (showStrategy) updateStrategyIndicatorPanel(param.logical);
       if (measureState.modeActive && measureState.step === 1) {
         measureState.endIdx = Math.round(param.logical);
         requestAnimationFrame(drawOverlay);
       }
     } else {
       lastCrosshairLogical = null;
+      if (showStrategy) updateStrategyIndicatorPanel(null);
     }
   });
 
   window.addEventListener("keydown", (e) => {
     if ((e.key === "Shift" || e.key === "ShiftLeft" || e.key === "ShiftRight") && !measureState.modeActive) setDrawMode("measure");
+    if (e.key === "Escape" && stratModalOpen) closeStrategyTradeModal();
   });
 
   (function blockBrowserZoom() {

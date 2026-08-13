@@ -23,6 +23,30 @@ function setupToggles() {
   tDrawVP.checked = drawingVPModeActive;
   tDrawRect.checked = drawingModeActive;
 
+  // ---- Strategy quick toggles ----
+  const stratToggles = [
+    ["toggle-strat-entries", "row-strat-entries", "showEntries"],
+    ["toggle-strat-biascloud", "row-strat-biascloud", "showBiasCloud"],
+    ["toggle-strat-entrycloud", "row-strat-entrycloud", "showEntryCloud"],
+    ["toggle-strat-vsr", "row-strat-vsr", "showVsr"],
+  ];
+  for (const [toggleId, rowId, cfgKey] of stratToggles) {
+    const el = document.getElementById(toggleId);
+    const row = document.getElementById(rowId);
+    if (!el || !row) continue;
+    if (STRAT_CFG && STRAT_CFG[cfgKey] !== undefined) {
+      el.checked = !!STRAT_CFG[cfgKey];
+      el.addEventListener("change", (e) => {
+        STRAT_CFG[cfgKey] = e.target.checked ? 1 : 0;
+        saveStrategyCfg();
+        if (cfgKey === "showEntries") applyStrategyMarkers(); // markers plugin riêng
+        requestAnimationFrame(drawOverlay);
+      });
+    } else {
+      row.style.display = "none"; // ẩn với strategy không dùng
+    }
+  }
+
   tAtr1.addEventListener("change", (e) => {
     showATR1 = e.target.checked;
     localStorage.setItem("stat1_showATR1", showATR1 ? "1" : "0");
@@ -140,12 +164,21 @@ async function loadSymbol() {
   t1Series2.setData(bot2.t1Data);
   t2Series2.setData(bot2.t2Data);
 
+  recomputeStrategy();
+
   setStatus("ready", `${bars.length.toLocaleString()} bars`);
   chart.timeScale().scrollToRealTime();
   requestAnimationFrame(() => syncCanvasSize());
 }
 
 async function run() {
+  mountSharedUI();
+  // Strategy được register trong file strategy-*.js (load trước main.js)
+  if (!STRATEGY.current) { console.error("No strategy registered!"); return; }
+  STRAT_CFG = loadStrategyCfg();
+  const nameEl = document.getElementById("strategy-settings-name");
+  if (nameEl) nameEl.textContent = STRATEGY.current.name;
+
   canvas = document.getElementById("overlay-canvas");
   ctx = canvas.getContext("2d");
   initChart();
@@ -159,6 +192,7 @@ async function run() {
   setupSidebar();
   setupAnalyseTool();
   setupInteractions();
+  setupStrategyModalBackdrop();
 
   initResizeObserver();
   setTimeout(() => syncCanvasSize(), 300);
