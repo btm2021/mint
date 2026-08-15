@@ -36,6 +36,7 @@ const SHARED_UI_HTML = `
     <div id="status"><span style="color:#3a4255">Starting...</span></div>
 
     <div class="tb-actions">
+      <a href="stat2.html" class="tb-btn" style="text-decoration:none;color:inherit;font-weight:700;display:inline-flex;align-items:center;padding:0 10px;" title="Mở trang Stat2">⚡ Stat2</a>
       <button class="tb-btn" id="cache-btn" title="Cache Manager">🗄</button>
     </div>
   </div>
