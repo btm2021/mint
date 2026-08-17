@@ -39,6 +39,8 @@ const SHARED_UI_HTML = `
       <a href="stat2.html" class="tb-btn" style="text-decoration:none;color:inherit;font-weight:700;display:inline-flex;align-items:center;padding:0 10px;" title="Mở trang Stat2">⚡ Stat2</a>
       <a href="snd.html" class="tb-btn" style="text-decoration:none;color:inherit;font-weight:700;display:inline-flex;align-items:center;padding:0 10px;" title="Mở trang Supply & Demand">⚡ S&amp;D</a>
       <a href="stat5.html" class="tb-btn" style="text-decoration:none;color:inherit;font-weight:700;display:inline-flex;align-items:center;padding:0 10px;" title="Mở trang Stat5 (S&D + ATRBot + VSR)">⚡ Stat5</a>
+      <a href="stat6.html" class="tb-btn" style="text-decoration:none;color:inherit;font-weight:700;display:inline-flex;align-items:center;padding:0 10px;" title="Mở trang Stat6 (Light: 2 ATRBot + 2 VSR + S&D)">⚡ Stat6</a>
+      <a href="stat7.html" class="tb-btn" style="text-decoration:none;color:inherit;font-weight:700;display:inline-flex;align-items:center;padding:0 10px;" title="Mở trang Stat7 (ForexFlow Full: mọi tính năng, 10k bars)">⚡ Stat7</a>
       <button class="tb-btn" id="cache-btn" title="Cache Manager">🗄</button>
     </div>
   </div>

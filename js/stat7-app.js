@@ -1,11 +1,16 @@
 // ============================================================
-// stat5-app.js — BOOTSTRAP & ĐIỀU KHIỂN STAT5
-// Kết hợp: Supply & Demand (ForexFlow) + 2 ATRBot + 2 VSR +
-//          VSR Overlap + hệ thống symbol đa nguồn + cache IndexedDB.
-//
-// Realtime: mỗi WS tick chỉ update chart + nến đang chạy.
-//           Nến ĐÓNG được phát hiện bằng sự đổi thời gian (bar.time) →
-//           chạy incremental S&D detection trên closed candles.
+// stat7-app.js — STAT7: FULL FOREXFLOW IMPLEMENTATION
+// Toàn bộ tính năng ForexFlow trong một trang:
+//   S&D zones (RBR/DBD/RBD/DBR + presets + debug)
+//   + Extended zone scoring 7 Odds Enhancers (proScore 0-12)
+//   + Trend detection + Regime + Divergence (RSI/MACD)
+//   + Fibonacci/OTE + Key levels + Momentum + Compound zones
+//   + Session classifier + Market confluence bias
+//   + 2 ATRBot + 2 VSR + VSR Overlap + symbol đa nguồn + cache
+// Load 10.000 bars (barLimit=10000) với guard hiệu năng:
+//   - detection window cap 5000 (maxCandles)
+//   - indicator recompute throttle 2s trên WS tick
+//   - detection/analysis chỉ trên closed candles
 // ============================================================
 
 let stat5Detector = null;
@@ -23,7 +28,10 @@ let stat5Regime = null;
 let stat5Divergences = [];
 let stat5Fib = null;
 let stat5KeyLevels = [];
+let stat5Session = null;
+let stat5Confluence = null;
 let stat5LastAnalysisTick = 0;
+let stat5LastIndicatorRecalc = 0;
 
 function stat5El(id) {
   return document.getElementById(id);
@@ -112,7 +120,7 @@ function stat5RenderDebug() {
   if (panel) panel.innerHTML = stat5DebugLog.map((l) => `<pre>${l}</pre>`).join("");
 }
 
-// ─── Indicators + S&D detection ──────────────────────────────
+// ─── Indicators (throttled trên WS tick) ─────────────────────
 function stat5RecalcIndicators() {
   if (!globalStat5Bars.length) return;
   const C = STAT5_CFG;
@@ -124,6 +132,15 @@ function stat5RecalcIndicators() {
     ? calculateStat2VSROverlap(globalStat5Bars, globalStat5Vsr1, globalStat5Vsr2)
     : null;
   stat5UpdateHUD();
+}
+
+// Recomputed tối đa 1 lần / 2000ms; force khi nến đóng / user thay đổi
+function stat5MaybeRecalcIndicators(force) {
+  const now = Date.now();
+  if (force || now - stat5LastIndicatorRecalc > 2000) {
+    stat5LastIndicatorRecalc = now;
+    stat5RecalcIndicators();
+  }
 }
 
 function stat5ApplyZones(zones) {
@@ -152,8 +169,8 @@ function stat5ApplyZones(zones) {
   stat5Status("ready", `${zones.length} zones · ${fresh} fresh · ${tested} tested · ${inv} inval`);
 }
 
-// ─── ForexFlow extended analysis pipeline ────────────────────
-// Chạy trên closed candles: trend, regime, divergence, fibonacci, key levels.
+// ─── ForexFlow FULL analysis pipeline ────────────────────────
+// trend, regime, divergence, fibonacci, key levels, session, confluence
 function stat5RunAnalysis() {
   if (!globalStat5Bars.length || !STAT5_CFG.analysis.enabled) return;
   const cfg = STAT5_CFG.analysis;
@@ -178,7 +195,7 @@ function stat5RunAnalysis() {
       ...ffxDetectMACDDivergence(candles, 3),
     ]
       .sort((a, b) => b.strength - a.strength)
-      .slice(0, 12); // giới hạn marker rõ ràng nhất
+      .slice(0, 12);
   } else {
     stat5Divergences = [];
   }
@@ -194,6 +211,20 @@ function stat5RunAnalysis() {
   } else {
     stat5KeyLevels = [];
   }
+
+  if (cfg.session) {
+    stat5Session = ffxClassifySession();
+  } else {
+    stat5Session = null;
+  }
+
+  if (cfg.confluence) {
+    stat5Confluence = ffxMarketConfluence(candles);
+  } else {
+    stat5Confluence = null;
+  }
+
+  stat7RenderBiasPanel();
 }
 
 // Extended scoring cho từng zone (7 Odds Enhancers → proScore)
@@ -228,7 +259,6 @@ function stat5PostProcessZones(zones) {
 
 function stat5RecalculateAndRedraw() {
   if (!stat5Detector || !globalStat5Bars.length) return;
-  // Đồng bộ detector với config hiện tại
   stat5Detector.config = stat5BuildAlgorithmConfig();
   stat5Detector.formations = stat5ActiveFormations();
   stat5Detector.minScore = STAT5_CFG.snd.minScore;
@@ -256,7 +286,7 @@ function stat5AppendBar(bar) {
 }
 
 function stat5OnBarUpdate(bar) {
-  // Phát hiện nến đóng: khi thời gian đổi, nến trước đã CLOSED
+  // Nến đóng: bar.time đổi → detection + analysis (chỉ closed candles)
   if (stat5LastBarTime !== null && bar.time !== stat5LastBarTime) {
     const closedBar = stat5Detector.candles[stat5Detector.candles.length - 1];
     if (closedBar && closedBar.time === stat5LastBarTime) {
@@ -266,6 +296,7 @@ function stat5OnBarUpdate(bar) {
       stat5ApplyZones(zones);
       stat5RunAnalysis();
       stat5UpdateHUD();
+      stat5MaybeRecalcIndicators(true);
     }
   }
   stat5LastBarTime = bar.time;
@@ -273,7 +304,7 @@ function stat5OnBarUpdate(bar) {
   stat5UpdateCandle(bar);
   stat5Detector.updateCandle(bar);
   stat5AppendBar(bar);
-  stat5RecalcIndicators();
+  stat5MaybeRecalcIndicators(false);
   stat5Ticker(bar.close, null);
 }
 
@@ -284,7 +315,7 @@ function stat5SetupRealtime() {
   setupSourceKlineStream(STAT5_CFG.dataSource, STAT5_CFG.symbol, STAT5_CFG.interval, stat5OnBarUpdate);
 }
 
-// ─── Data loading (với cache IndexedDB) ─────────────────────
+// ─── Data loading (10k bars + cache IndexedDB) ───────────────
 async function stat5LoadSymbolData() {
   const src = getSourceInfo(STAT5_CFG.dataSource);
   const progContainer = stat5El("stat5-progress-bar-container");
@@ -324,7 +355,6 @@ async function stat5LoadSymbolData() {
   stat5SetBars(bars);
   globalStat5Bars = bars;
 
-  // Detector full scan (mọi nến historical đều đã đóng)
   stat5Detector.config = stat5BuildAlgorithmConfig();
   stat5Detector.formations = stat5ActiveFormations();
   stat5Detector.symbol = STAT5_CFG.symbol;
@@ -340,9 +370,9 @@ async function stat5LoadSymbolData() {
   stat5Status("ready", `${bars.length.toLocaleString()} nến`);
   stat5SetupRealtime();
 
-  // Refresh analysis định kỳ (HUD trend/regime theo thời gian thực)
-  if (window._stat5AnalysisTimer) clearInterval(window._stat5AnalysisTimer);
-  window._stat5AnalysisTimer = setInterval(() => {
+  // Refresh analysis định kỳ
+  if (window._stat7AnalysisTimer) clearInterval(window._stat7AnalysisTimer);
+  window._stat7AnalysisTimer = setInterval(() => {
     if (!STAT5_CFG.analysis.enabled) return;
     stat5RunAnalysis();
     stat5PostProcessZones(stat5Detector.getZones());
@@ -450,7 +480,6 @@ function stat5UpdateHUD() {
   const ovL = globalStat5VsrOverlap?.lowerArr?.[idx];
   const isOv = Number.isFinite(ovU) && Number.isFinite(ovL);
 
-  // Analysis HUD
   let analysisHtml = "";
   if (STAT5_CFG.analysis.enabled) {
     const rsi = ffxComputeRSI(globalStat5Bars.slice(-40), 14);
@@ -477,6 +506,9 @@ function stat5UpdateHUD() {
       const divCls = lastDiv.type.includes("bullish") ? "tag-up" : "tag-down";
       analysisHtml += `<div class="hud-item"><span class="hud-lbl">DIV</span> <span class="${divCls}">${lastDiv.type.replace("_", " ")}</span></div>`;
     }
+    if (STAT5_CFG.analysis.session && stat5Session) {
+      analysisHtml += `<div class="hud-item"><span class="hud-lbl">SESSION</span> <span class="tag-dim">${stat5Session.replace("_", " ")}</span></div>`;
+    }
   }
 
   el.innerHTML = `
@@ -486,6 +518,44 @@ function stat5UpdateHUD() {
     <div class="hud-item"><span class="hud-lbl">VSR Ov</span> <b class="${isOv ? "highlight" : "dim"}">${isOv ? "ON" : "OFF"}</b></div>
     ${analysisHtml}
   `;
+}
+
+// ─── Market confluence bias panel ────────────────────────────
+function stat7RenderBiasPanel() {
+  const panel = stat5El("stat7-bias-panel");
+  if (!panel) return;
+  if (!STAT5_CFG.analysis.enabled || !STAT5_CFG.analysis.confluence || !stat5Confluence) {
+    panel.style.display = "none";
+    return;
+  }
+  panel.style.display = "block";
+
+  const c = stat5Confluence;
+  const f = c.factors;
+  const dirCls = c.direction === "buy" ? "up" : c.direction === "sell" ? "down" : "flat";
+  const dirLabel = c.direction === "buy" ? "▲ BULLISH" : c.direction === "sell" ? "▼ BEARISH" : "◆ NEUTRAL";
+  const bar = (score, label, cls) => `
+    <div class="stat7-bias-row">
+      <span class="stat7-bias-lbl">${label}</span>
+      <div class="stat7-bias-track"><div class="stat7-bias-fill ${cls}" style="width:${Math.round(score * 10)}%"></div></div>
+      <span class="stat7-bias-val">${score.toFixed(1)}</span>
+    </div>`;
+
+  panel.innerHTML = `
+    <div class="stat7-bias-head ${dirCls}">
+      <span>CONFLUENCE BIAS</span>
+      <b>${dirLabel} <i>${Math.max(c.buy, c.sell).toFixed(1)}/10</i></b>
+    </div>
+    <div class="stat7-bias-body">
+      <div class="stat7-bias-sides">
+        <div>LONG <b class="up">${c.buy.toFixed(1)}</b></div>
+        <div>SHORT <b class="down">${c.sell.toFixed(1)}</b></div>
+      </div>
+      ${bar(f.trend.buy.score, "Trend (EMA50/200)", "up")}
+      ${bar(f.momentum.buy.score, "Momentum (RSI)", "up")}
+      ${bar(f.volatility.score, `Volatility (ADX ${f.volatility.detail.adx.toFixed(0)})`, "flat")}
+      ${bar(f.session.score, `Session (${f.session.detail.session.replace("_", " ")})`, "flat")}
+    </div>`;
 }
 
 // ─── Quick toggles ───────────────────────────────────────────
@@ -719,6 +789,8 @@ function stat5InitToolbar() {
   bindAnalysisToggle("stat5-ana-fib", "analysis.fibonacci", false);
   bindAnalysisToggle("stat5-ana-keylevels", "analysis.keyLevels", false);
   bindAnalysisToggle("stat5-ana-regime", "analysis.regime", false);
+  bindAnalysisToggle("stat5-ana-session", "analysis.session", false);
+  bindAnalysisToggle("stat5-ana-conf", "analysis.confluence", false);
   bindAnalysisToggle("stat5-ana-extscore", "analysis.extendedScore", true);
 
   // Nút bật/tắt danh sách S&D zones (ẩn mặc định)
@@ -743,7 +815,7 @@ function stat5GetNested(obj, path) {
 }
 
 // ─── Boot ────────────────────────────────────────────────────
-async function initStat5() {
+async function initStat7() {
   initStat5Chart();
   const symInput = stat5El("stat5-symbol-input");
   if (symInput) symInput.value = STAT5_CFG.symbol;
@@ -755,12 +827,16 @@ async function initStat5() {
     minScore: STAT5_CFG.snd.minScore,
     debug: STAT5_CFG.snd.debug,
     config: stat5BuildAlgorithmConfig(),
+    maxCandles: 5000, // detection window cap → giữ realtime nhanh trên 10k bars
   });
 
   stat5SetDebug(STAT5_CFG.snd.debug);
-  stat5SetHoverCallback((zone, param) => {
+  // Info panel chỉ bật khi CLICK vào zone — hover với zone rộng hàng trăm
+  // nến sẽ làm panel bật liên tục che chart.
+  stat5SetHoverCallback(() => { });
+  stat5Chart.subscribeClick((param) => {
+    const zone = stat5HitTestZone(param);
     if (zone) stat5ShowZoneInfo(zone);
-    else if (param && !param.point) stat5El("stat5-zone-info").classList.remove("visible");
   });
 
   stat5InitIntervalPills();
@@ -808,4 +884,4 @@ function stat5InitQuickToggles() {
   bind("qt5-snd", "snd.enabled", STAT5_CFG.snd.enabled);
 }
 
-window.addEventListener("DOMContentLoaded", initStat5);
+window.addEventListener("DOMContentLoaded", initStat7);

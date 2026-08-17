@@ -152,7 +152,10 @@ function sndBuildCandidate(move, base, direction, classified, config, atrValues,
 // detectSupplyDemandZones(candles, config, opts)
 //   candles: [{ time, open, high, low, close, volume }]
 //   config : sndBuildAlgorithmConfig() → { preset..., maxBaseWidthAtr }
-//   opts   : { symbol, timeframe, formations, minScore, debug }
+//   opts   : { symbol, timeframe, formations, minScore, debug, maxCandles }
+//              maxCandles: giới hạn số nến đưa vào detection (giữ N nến mới
+//              nhất) — chi phí detector ~O(candidates × n) nên cap giúp
+//              giữ realtime nhẹ khi buffer lớn.
 // returns  : { zones, classifiedCandles, atrValues, debug }
 function detectSupplyDemandZones(candles, config, opts = {}) {
   const symbol = opts.symbol || "";
@@ -160,6 +163,10 @@ function detectSupplyDemandZones(candles, config, opts = {}) {
   const formations = opts.formations || ["RBR", "DBD"];
   const minScore = opts.minScore ?? 70;
   const debug = !!opts.debug;
+
+  if (opts.maxCandles && candles.length > opts.maxCandles) {
+    candles = candles.slice(-opts.maxCandles);
+  }
 
   const empty = { zones: [], classifiedCandles: [], atrValues: [], debug: { candidates: [], rejections: [], accepted: [] } };
   if (candles.length < config.atrPeriod + 3) return empty;
@@ -355,6 +362,7 @@ class SupplyDemandDetector {
     this.minScore = opts.minScore ?? 70;
     this.debug = !!opts.debug;
     this.config = opts.config || {};
+    this.maxCandles = opts.maxCandles || 0;
     this.candles = [];
     this.zones = [];
     this.classified = [];
@@ -411,6 +419,7 @@ class SupplyDemandDetector {
       formations: this.formations,
       minScore: this.minScore,
       debug: this.debug,
+      maxCandles: this.maxCandles,
     });
     this.zones = result.zones;
     this.classified = result.classifiedCandles;

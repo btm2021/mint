@@ -73,7 +73,8 @@ function sndSetCandles(bars) {
   sndCandles = bars;
   sndCandleSeries.setData(bars);
   sndApplyPriceFormat(bars);
-  sndChart.timeScale().scrollToRealTime();
+  // Fit toàn bộ dữ liệu khi load — không chỉ hiện ~160 nến cuối
+  sndChart.timeScale().fitContent();
   sndSyncCanvas();
 }
 

@@ -307,3 +307,144 @@ function ffxDetectCompoundZones(zones, atr) {
 function ffxCompoundBonus(compoundCount) {
   return compoundCount >= 1 ? 1 : 0;
 }
+
+// ─── 7. SESSION CLASSIFIER (port từ session-classifier.ts) ───
+// Crypto 24/7 nhưng phiên London/NY vẫn có liquidity tốt hơn.
+function ffxClassifySession(date) {
+  const d = date || new Date();
+  const utcHour = d.getUTCHours();
+  if (utcHour >= 7 && utcHour < 10) return "london_open";
+  if (utcHour >= 10 && utcHour < 12) return "london";
+  if (utcHour >= 12 && utcHour < 15) return "ny_open";
+  if (utcHour >= 15 && utcHour < 17) return "ny";
+  if (utcHour >= 0 && utcHour < 7) return "asian";
+  return "off_hours";
+}
+
+const FFX_SESSION_QUALITY = {
+  london_open: 1.0,
+  ny_open: 1.0,
+  london: 0.8,
+  ny: 0.7,
+  asian: 0.5,
+  off_hours: 0.2,
+};
+
+function ffxSessionQuality(session) {
+  return FFX_SESSION_QUALITY[session] ?? 0.2;
+}
+
+// ─── 8. MARKET CONFLUENCE (port từ confluence-scoring.ts) ────
+// Chấm điểm hội tụ cho CẢ hai chiều (buy/sell) ở trạng thái thị trường
+// hiện tại: Trend (EMA50/200) + Momentum (RSI) + Volatility (ADX)
+// + Session quality → điểm 0-10 mỗi chiều, trả bias mạnh hơn.
+
+function ffxConfTrend(candles, direction) {
+  if (candles.length < 200) {
+    return { score: 5, detail: { alignment: "insufficient_data" } };
+  }
+  const ema50Series = ffxComputeEMASeries(candles, 50);
+  const ema200Series = ffxComputeEMASeries(candles, 200);
+  const ema50 = ema50Series[ema50Series.length - 1];
+  const ema200 = ema200Series[ema200Series.length - 1];
+  const price = candles[candles.length - 1].close;
+
+  const isBullishTrend = ema50 > ema200 && price > ema50;
+  const isBearishTrend = ema50 < ema200 && price < ema50;
+  const isBuy = direction === "buy";
+
+  let score, alignment;
+  if (isBuy && isBullishTrend) { score = 10; alignment = "with_trend"; }
+  else if (!isBuy && isBearishTrend) { score = 10; alignment = "with_trend"; }
+  else if (isBuy && isBearishTrend) { score = 0; alignment = "against_trend"; }
+  else if (!isBuy && isBullishTrend) { score = 0; alignment = "against_trend"; }
+  else {
+    const priceAboveEma200 = price > ema200;
+    score = isBuy === priceAboveEma200 ? 5 : 3;
+    alignment = "neutral";
+  }
+  return { score, detail: { ema50, ema200, price, alignment } };
+}
+
+function ffxConfMomentum(candles, direction) {
+  const rsi = ffxComputeRSI(candles, 14);
+  if (rsi === null) return { score: 5, detail: { rsi: 0, zone: "insufficient_data" } };
+  const isBuy = direction === "buy";
+  let score, zone;
+  if (rsi >= 80) { zone = "overbought"; score = isBuy ? 1 : 7; }
+  else if (rsi <= 20) { zone = "oversold"; score = isBuy ? 7 : 1; }
+  else if (rsi >= 70) { zone = "high"; score = isBuy ? 4 : 6; }
+  else if (rsi <= 30) { zone = "low"; score = isBuy ? 6 : 4; }
+  else if (isBuy && rsi >= 50) { zone = "bullish"; score = rsi >= 55 && rsi <= 65 ? 10 : 8; }
+  else if (!isBuy && rsi < 50) { zone = "bearish"; score = rsi >= 35 && rsi <= 45 ? 10 : 8; }
+  else { zone = isBuy ? "bearish" : "bullish"; score = 2; }
+  return { score, detail: { rsi, zone } };
+}
+
+function ffxConfVolatility(candles) {
+  const adxResult = ffxComputeADX(candles, 14);
+  if (!adxResult) return { score: 5, detail: { adx: 0, regime: "insufficient_data" } };
+  const { adx, plusDI, minusDI } = adxResult;
+  let score, regime;
+  if (adx >= 30) { score = 10; regime = "trending"; }
+  else if (adx >= 25) { score = 8; regime = "trending"; }
+  else if (adx >= 20) { score = 6; regime = "weak_trend"; }
+  else if (adx >= 15) { score = 3; regime = "ranging"; }
+  else { score = 1; regime = "ranging"; }
+  return { score, detail: { adx, plusDI, minusDI, regime } };
+}
+
+function ffxConfSession() {
+  const session = ffxClassifySession();
+  const quality = ffxSessionQuality(session);
+  let score;
+  if (session === "london_open" || session === "ny_open") score = 10;
+  else if (session === "london") score = 7;
+  else if (quality >= 0.7) score = 6;
+  else if (quality >= 0.45) score = 4;
+  else score = 1;
+  return { score, detail: { session, quality } };
+}
+
+// Trọng số mặc định (giống ForexFlow TVAlertsQualityConfig)
+const FFX_CONFLUENCE_WEIGHTS = { trend: 3, momentum: 2, volatility: 2, session: 1 };
+
+// Bias thị trường: chấm confluence cho cả buy & sell, trả chiều mạnh hơn.
+function ffxMarketConfluence(candles) {
+  const trend = { buy: ffxConfTrend(candles, "buy"), sell: ffxConfTrend(candles, "sell") };
+  const momentum = { buy: ffxConfMomentum(candles, "buy"), sell: ffxConfMomentum(candles, "sell") };
+  const volatility = ffxConfVolatility(candles);
+  const session = ffxConfSession();
+
+  const totalW =
+    FFX_CONFLUENCE_WEIGHTS.trend +
+    FFX_CONFLUENCE_WEIGHTS.momentum +
+    FFX_CONFLUENCE_WEIGHTS.volatility +
+    FFX_CONFLUENCE_WEIGHTS.session;
+
+  const weighted = (t, m) =>
+    (t.score * FFX_CONFLUENCE_WEIGHTS.trend +
+      m.score * FFX_CONFLUENCE_WEIGHTS.momentum +
+      volatility.score * FFX_CONFLUENCE_WEIGHTS.volatility +
+      session.score * FFX_CONFLUENCE_WEIGHTS.session) / totalW;
+
+  const buyScore = Math.round(weighted(trend.buy, momentum.buy) * 10) / 10;
+  const sellScore = Math.round(weighted(trend.sell, momentum.sell) * 10) / 10;
+
+  let direction = "neutral";
+  if (buyScore - sellScore >= 2) direction = "buy";
+  else if (sellScore - buyScore >= 2) direction = "sell";
+
+  return {
+    direction,
+    buy: buyScore,
+    sell: sellScore,
+    factors: {
+      trend: { buy: trend.buy, sell: trend.sell },
+      momentum: { buy: momentum.buy, sell: momentum.sell },
+      volatility,
+      session,
+    },
+    weights: FFX_CONFLUENCE_WEIGHTS,
+  };
+}

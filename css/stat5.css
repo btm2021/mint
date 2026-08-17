@@ -157,7 +157,7 @@ body {
 .tag-dim { background: rgba(128,128,128,0.15); color: #9aa0a6; padding: 1px 5px; border-radius: 3px; font-size: 9px; font-weight: 700; }
 
 /* Zone info */
-#stat5-zone-info { position: absolute; top: 8px; right: 250px; z-index: 12; width: 250px; background: rgba(12,12,22,0.94); border: 1px solid var(--border-bright); border-radius: 10px; box-shadow: 0 14px 40px rgba(0,0,0,0.6); backdrop-filter: blur(6px); display: none; max-height: calc(100% - 16px); overflow-y: auto; }
+#stat5-zone-info { position: absolute; top: 8px; right: 10px; z-index: 12; width: 250px; background: rgba(12,12,22,0.94); border: 1px solid var(--border-bright); border-radius: 10px; box-shadow: 0 14px 40px rgba(0,0,0,0.6); backdrop-filter: blur(6px); display: none; max-height: calc(100% - 16px); overflow-y: auto; }
 #stat5-zone-info.visible { display: block; animation: s5-fade 0.15s ease; }
 @keyframes s5-fade { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
 .stat5-zone-info-head { display: flex; align-items: center; gap: 8px; padding: 9px 12px; border-bottom: 1px solid; }
@@ -174,8 +174,19 @@ body {
 .stat5-zone-status.tested { background: rgba(255,193,7,0.15); color: var(--warn); }
 .stat5-zone-status.invalidated { background: rgba(128,128,128,0.18); color: #9aa0a6; }
 
-/* Zone side list */
-#stat5-zone-side { position: absolute; top: 0; right: 0; bottom: 0; z-index: 9; width: 240px; background: rgba(10,10,18,0.88); border-left: 1px solid var(--border-color); display: flex; flex-direction: column; backdrop-filter: blur(4px); }
+/* Zone side list — ẩn mặc định, chỉ hiện khi bấm nút Zones */
+#stat5-zone-side { position: absolute; top: 0; right: 0; bottom: 0; z-index: 9; width: 240px; background: rgba(10,10,18,0.88); border-left: 1px solid var(--border-color); display: none; flex-direction: column; backdrop-filter: blur(4px); }
+#stat5-zone-side.open { display: flex; }
+#stat5-zone-side.open ~ #stat5-zone-info { right: 250px; }
+
+/* Nút bật/tắt danh sách zones */
+.stat5-zone-toggle {
+  height: 26px; padding: 0 10px; border: 1px solid var(--border-color); border-radius: 5px;
+  background: var(--bg-card); color: var(--text-dim); font-family: inherit; font-size: 11px;
+  font-weight: 600; cursor: pointer; flex-shrink: 0; transition: all 0.15s;
+}
+.stat5-zone-toggle:hover { color: var(--text-main); border-color: var(--border-bright); }
+.stat5-zone-toggle.active { background: rgba(0,230,118,0.1); color: var(--accent); border-color: rgba(0,230,118,0.35); }
 .stat5-zone-side-title { padding: 8px 12px; font-size: 10px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--text-dim); border-bottom: 1px solid var(--border-color); }
 #stat5-zone-list { flex: 1; overflow-y: auto; padding: 4px 6px; }
 #stat5-zone-list::-webkit-scrollbar { width: 4px; }

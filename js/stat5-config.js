@@ -147,6 +147,8 @@ const STAT5_DEFAULT_CONFIG = {
     divergence: true,           // RSI/MACD divergence markers
     fibonacci: true,            // fib retracement + OTE zone từ swings
     keyLevels: true,            // round-number levels
+    session: true,              // session classifier (HUD)
+    confluence: true,           // market confluence bias panel
     trendConfig: {
       swingStrength: 0,         // 0 = adaptive theo timeframe
       minSegmentAtr: 0.5,

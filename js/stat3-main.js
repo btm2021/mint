@@ -243,7 +243,7 @@ async function loadStat3SymbolData({ fit = false } = {}) {
     setTimeout(() => stat3SetProgress(0, false), 350);
     stat3SetStatus(`<span class="ready-dot"></span> [Binance Futures] <span class="process-badge">${stat3Bars.length.toLocaleString()} nến · ${stat3Engine.orderBlocks.length.toLocaleString()} OB · ${stat3Fvgs.length.toLocaleString()} FVG</span>`);
     if (fit) stat3Chart.timeScale().fitContent();
-    else stat3Chart.timeScale().scrollToRealTime();
+    else stat3Chart.timeScale().fitContent();
     stat3StartStreams(symbol, interval);
   } catch (error) {
     console.error(error);

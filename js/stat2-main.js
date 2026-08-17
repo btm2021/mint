@@ -172,7 +172,7 @@ async function loadStat2SymbolData() {
   if (statusEl) {
     statusEl.innerHTML = `<span class="ready-dot"></span> [${src.shortName}] <span class="process-badge">${bars.length.toLocaleString()} nến</span>`;
   }
-  stat2Chart.timeScale().scrollToRealTime();
+  stat2Chart.timeScale().fitContent();
 
   // Khởi tạo luồng realtime
   setupSourceTickerStream(sourceKey, sym, ({ price, changePct }) => {

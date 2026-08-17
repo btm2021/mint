@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>MintChart · Stat5 (S&amp;D + ATRBot + VSR)</title>
+  <title>MintChart · Stat7 (ForexFlow Full — 10k bars)</title>
 
   <script src="https://unpkg.com/lightweight-charts@5.1.0/dist/lightweight-charts.standalone.production.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -12,7 +12,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 
   <link rel="icon" type="image/png" href="icon-192.png">
-  <link rel="stylesheet" href="css/stat5.css">
+  <link rel="stylesheet" href="css/stat7.css">
 </head>
 
 <body>
@@ -24,8 +24,8 @@
   <!-- TOPBAR -->
   <div id="stat5-topbar">
     <a href="index.html" class="tb-brand" title="Về MintChart gốc">
-      <div class="tb-logo-badge">S5</div>
-      <span class="tb-title">STAT5 <small>S&amp;D</small></span>
+      <div class="tb-logo-badge">S7</div>
+      <span class="tb-title">STAT7 <small>FXFLOW</small></span>
     </a>
 
     <div class="tb-search-box">
@@ -68,7 +68,7 @@
     </button>
   </div>
 
-  <!-- TOOLBAR (S&D) -->
+  <!-- TOOLBAR (S&D + Analysis) -->
   <div id="stat5-toolbar">
     <div class="stat5-tool-group">
       <label class="stat5-tool-label">Preset</label>
@@ -99,6 +99,8 @@
     <label class="stat5-check ana"><input type="checkbox" id="stat5-ana-fib" /> Fib</label>
     <label class="stat5-check ana"><input type="checkbox" id="stat5-ana-keylevels" /> KeyL</label>
     <label class="stat5-check ana"><input type="checkbox" id="stat5-ana-regime" /> Regime</label>
+    <label class="stat5-check ana"><input type="checkbox" id="stat5-ana-session" /> Session</label>
+    <label class="stat5-check ana"><input type="checkbox" id="stat5-ana-conf" /> Bias</label>
     <label class="stat5-check ana pro"><input type="checkbox" id="stat5-ana-extscore" /> Pro score</label>
     <div class="stat5-tool-sep"></div>
     <button class="stat5-zone-toggle" id="stat5-zone-toggle-btn" title="Hiện/ẩn danh sách S&D zones">Zones ☰</button>
@@ -111,10 +113,11 @@
 
     <div id="stat5-legend"></div>
     <div id="stat5-indicator-hud"></div>
+    <div id="stat7-bias-panel"></div>
     <div id="stat5-zone-info"></div>
 
     <div id="stat5-zone-side">
-      <div class="stat5-zone-side-title">S&amp;D Zones</div>
+      <div class="stat5-zone-side-title">S&amp;D Zones (pro = 7 enhancers)</div>
       <div id="stat5-zone-list"></div>
     </div>
   </div>
@@ -133,7 +136,7 @@
     <div class="stat5-settings-card">
       <div class="modal-header">
         <div class="modal-title">
-          <span>⚙</span> Cài Đặt Tham Số &amp; Giao Diện (Stat5)
+          <span>⚙</span> Cài Đặt Tham Số &amp; Giao Diện (Stat7)
         </div>
         <button class="modal-close-btn" id="stat5-settings-close-btn">✕</button>
       </div>
@@ -169,7 +172,7 @@
 
   <!-- LOADING -->
   <div id="stat5-loading">
-    <div class="stat5-loading-logo">S5</div>
+    <div class="stat5-loading-logo">S7</div>
     <div class="stat5-loading-text">Initializing...</div>
   </div>
 
@@ -186,10 +189,11 @@
   <script src="js/ffx-technicals.js"></script>
   <script src="js/ffx-trend.js"></script>
   <script src="js/ffx-analysis.js"></script>
+  <script src="js/stat7-config.js"></script>
   <script src="js/stat5-config.js"></script>
   <script src="js/stat5-chart.js"></script>
   <script src="js/stat5-settings.js"></script>
-  <script src="js/stat5-app.js"></script>
+  <script src="js/stat7-app.js"></script>
 </body>
 
 </html>

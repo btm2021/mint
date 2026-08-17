@@ -167,7 +167,7 @@ async function loadSymbol() {
   recomputeStrategy();
 
   setStatus("ready", `${bars.length.toLocaleString()} bars`);
-  chart.timeScale().scrollToRealTime();
+  chart.timeScale().fitContent();
   requestAnimationFrame(() => syncCanvasSize());
 }
 

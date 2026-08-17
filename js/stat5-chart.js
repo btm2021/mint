@@ -76,7 +76,7 @@ function initStat5Chart() {
       horzLines: { color: cfg.showGrid ? cfg.gridColor : "rgba(0,0,0,0)" },
     },
     crosshair: { mode: 0 },
-    timeScale: { timeVisible: true, secondsVisible: false, borderColor: "#1e2435" },
+    timeScale: { timeVisible: true, secondsVisible: false, borderColor: "#1e2435", minBarSpacing: 0.05 },
     rightPriceScale: { borderColor: "#1e2435", scaleMargins: { top: 0.08, bottom: 0.08 } },
     handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: true },
     handleScale: { axisPressedMouseMove: true, mouseWheel: true, pinch: true },
@@ -123,7 +123,8 @@ function stat5SetBars(bars) {
   globalStat5Bars = bars;
   stat5CandleSeries.setData(bars);
   stat5CandleSeries.applyOptions({ priceFormat: stat5PriceFormat(bars[bars.length - 1]?.close) });
-  stat5Chart.timeScale().scrollToRealTime();
+  // Fit toàn bộ dữ liệu khi load — mặc định scrollToRealTime chỉ hiện ~160 nến cuối
+  stat5Chart.timeScale().fitContent();
   syncStat5CanvasSize();
 }
 
