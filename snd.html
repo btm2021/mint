@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="vi">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>MintChart · Supply &amp; Demand Zones</title>
+
+  <script src="https://unpkg.com/lightweight-charts@5.1.0/dist/lightweight-charts.standalone.production.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="css/snd.css">
+</head>
+
+<body>
+  <!-- TOPBAR -->
+  <div id="snd-topbar">
+    <a href="index.html" class="snd-brand" title="Về MintChart gốc">
+      <div class="snd-brand-badge">S&amp;D</div>
+      <span class="snd-brand-name">SUPPLY &amp; DEMAND <small>PRO</small></span>
+    </a>
+
+    <div class="snd-search-box">
+      <span class="snd-search-icon">🔍</span>
+      <input id="snd-symbol-input" class="snd-search-input" type="text" placeholder="Search market..." readonly />
+    </div>
+
+    <div class="snd-intervals" id="snd-interval-pills"></div>
+
+    <div class="snd-ticker">
+      <span id="snd-ticker-price">—</span>
+      <span id="snd-ticker-change" class="snd-badge-up">—</span>
+    </div>
+
+    <div id="snd-status"><span class="snd-status-dot"></span> Starting...</div>
+
+    <a href="stat5.html" class="snd-back-link" title="Mở Stat5 (S&D + ATRBot + VSR)">⚡ Stat5</a>
+    <a href="index.html" class="snd-back-link" title="Back to original">🏠</a>
+  </div>
+
+  <!-- TOOLBAR -->
+  <div id="snd-toolbar">
+    <div class="snd-tool-group">
+      <label class="snd-tool-label">Preset</label>
+      <select id="snd-preset-select">
+        <option value="conservative">Conservative</option>
+        <option value="standard">Standard</option>
+        <option value="aggressive">Aggressive</option>
+      </select>
+    </div>
+
+    <div class="snd-tool-group">
+      <label class="snd-tool-label">Min score</label>
+      <input id="snd-min-score" type="number" min="0" max="100" step="1" />
+    </div>
+
+    <div class="snd-tool-group">
+      <label class="snd-tool-label">Lookback</label>
+      <select id="snd-lookback-select">
+        <option value="500">500</option>
+        <option value="1000">1000</option>
+        <option value="1500">1500</option>
+      </select>
+    </div>
+
+    <div class="snd-tool-sep"></div>
+
+    <label class="snd-check"><input type="checkbox" id="snd-tf-RBR" /> RBR</label>
+    <label class="snd-check"><input type="checkbox" id="snd-tf-DBD" /> DBD</label>
+    <label class="snd-check alt"><input type="checkbox" id="snd-tf-RBD" /> RBD</label>
+    <label class="snd-check alt"><input type="checkbox" id="snd-tf-DBR" /> DBR</label>
+
+    <div class="snd-tool-sep"></div>
+
+    <label class="snd-check"><input type="checkbox" id="snd-show-tested" /> Show tested</label>
+    <label class="snd-check"><input type="checkbox" id="snd-show-invalidated" /> Show invalidated</label>
+
+    <div class="snd-tool-sep"></div>
+
+    <label class="snd-check debug"><input type="checkbox" id="snd-debug-toggle" /> DEBUG</label>
+  </div>
+
+  <!-- CHART -->
+  <div id="snd-chart-wrapper">
+    <div id="snd-chart-container"></div>
+    <canvas id="snd-overlay-canvas"></canvas>
+
+    <div id="snd-legend"></div>
+
+    <div id="snd-zone-info"></div>
+
+    <div id="snd-zone-side">
+      <div class="snd-zone-side-title">Zones</div>
+      <div id="snd-zone-list"></div>
+    </div>
+  </div>
+
+  <!-- DEBUG PANEL -->
+  <div id="snd-debug-panel">
+    <div class="snd-debug-header">
+      <span>Detector Debug Log</span>
+      <button id="snd-debug-clear">Clear</button>
+    </div>
+    <div id="snd-debug-body"></div>
+  </div>
+
+  <!-- SYMBOL SEARCH MODAL -->
+  <div id="snd-symbol-modal" class="snd-modal">
+    <div class="snd-modal-box">
+      <div class="snd-modal-head">
+        <span>Chọn market (Binance Futures)</span>
+        <button id="snd-symbol-modal-close">✕</button>
+      </div>
+      <input id="snd-symbol-search-input" type="search" placeholder="Filter symbols, e.g. BTC" autocomplete="off" spellcheck="false" />
+      <div id="snd-symbol-results"></div>
+    </div>
+  </div>
+
+  <!-- LOADING -->
+  <div id="snd-loading">
+    <div class="snd-loading-logo">S&amp;D</div>
+    <div class="snd-loading-text" id="snd-loading-text">Initializing...</div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="js/snd-config.js"></script>
+  <script src="js/snd-atr.js"></script>
+  <script src="js/snd-candle-classifier.js"></script>
+  <script src="js/snd-zone-utils.js"></script>
+  <script src="js/snd-zone-scorer.js"></script>
+  <script src="js/snd-zone-detector.js"></script>
+  <script src="js/snd-binance.js"></script>
+  <script src="js/snd-chart.js"></script>
+  <script src="js/snd-app.js"></script>
+</body>
+
+</html>
