@@ -137,6 +137,22 @@ const STAT5_DEFAULT_CONFIG = {
     showInvalidated: false,
     debug: false,
   },
+
+  // --- FOREXFLOW EXTENDED ANALYSIS ---
+  analysis: {
+    enabled: true,              // bật pipeline phân tích mở rộng
+    extendedScore: true,        // tính proScore (7 Odds Enhancers) cho zone
+    trend: true,                // trend detection + overlay swings/segments
+    regime: true,               // regime detection (HUD)
+    divergence: true,           // RSI/MACD divergence markers
+    fibonacci: true,            // fib retracement + OTE zone từ swings
+    keyLevels: true,            // round-number levels
+    trendConfig: {
+      swingStrength: 0,         // 0 = adaptive theo timeframe
+      minSegmentAtr: 0.5,
+      maxSwingPoints: 20,
+    },
+  },
 };
 
 // Global config instance

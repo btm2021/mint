@@ -17,6 +17,14 @@ let stat5SymbolsCache = {};
 let stat5ActiveSourceFilter = "all";
 let stat5CachedSet = new Set();
 
+// ForexFlow extended analysis state
+let stat5Trend = null;
+let stat5Regime = null;
+let stat5Divergences = [];
+let stat5Fib = null;
+let stat5KeyLevels = [];
+let stat5LastAnalysisTick = 0;
+
 function stat5El(id) {
   return document.getElementById(id);
 }
@@ -144,6 +152,80 @@ function stat5ApplyZones(zones) {
   stat5Status("ready", `${zones.length} zones · ${fresh} fresh · ${tested} tested · ${inv} inval`);
 }
 
+// ─── ForexFlow extended analysis pipeline ────────────────────
+// Chạy trên closed candles: trend, regime, divergence, fibonacci, key levels.
+function stat5RunAnalysis() {
+  if (!globalStat5Bars.length || !STAT5_CFG.analysis.enabled) return;
+  const cfg = STAT5_CFG.analysis;
+  const candles = globalStat5Bars;
+  const lastClose = candles[candles.length - 1].close;
+
+  if (cfg.trend) {
+    stat5Trend = ffxDetectTrend(candles, STAT5_CFG.interval, cfg.trendConfig, lastClose);
+  } else {
+    stat5Trend = null;
+  }
+
+  if (cfg.regime) {
+    stat5Regime = ffxDetectRegime(candles);
+  } else {
+    stat5Regime = null;
+  }
+
+  if (cfg.divergence) {
+    stat5Divergences = [
+      ...ffxDetectRSIDivergence(candles, 14, 3),
+      ...ffxDetectMACDDivergence(candles, 3),
+    ]
+      .sort((a, b) => b.strength - a.strength)
+      .slice(0, 12); // giới hạn marker rõ ràng nhất
+  } else {
+    stat5Divergences = [];
+  }
+
+  if (cfg.fibonacci && stat5Trend) {
+    stat5Fib = ffxFindFibonacciFromSwings(stat5Trend.swingPoints);
+  } else {
+    stat5Fib = null;
+  }
+
+  if (cfg.keyLevels) {
+    stat5KeyLevels = ffxFindKeyLevels(lastClose);
+  } else {
+    stat5KeyLevels = [];
+  }
+}
+
+// Extended scoring cho từng zone (7 Odds Enhancers → proScore)
+function stat5PostProcessZones(zones) {
+  if (!STAT5_CFG.analysis.enabled || !STAT5_CFG.analysis.extendedScore || !zones.length) return zones;
+  const atrValues = sndComputeATR(stat5Detector.candles, stat5BuildAlgorithmConfig().atrPeriod);
+  const localAtr = atrValues[atrValues.length - 1] ?? 0;
+  const withCompound = ffxDetectCompoundZones(zones, localAtr);
+  const currentPrice = stat5Detector.candles[stat5Detector.candles.length - 1].close;
+
+  for (const z of withCompound) {
+    const ctx = {
+      trendData: stat5Trend,
+      allZones: withCompound,
+      currentPrice,
+      momentumValue: ffxScoreMomentum(z.type, globalStat5Bars.slice(-40)).value,
+      compoundCount: z.compoundCount,
+    };
+    const ext = sndScoreZoneExtended(z, stat5Detector.classified, [], stat5BuildAlgorithmConfig(), ctx);
+    z.proScore = ext.proScore;
+    z.extended = {
+      trend: ext.trend,
+      momentum: ext.momentum,
+      profitZone: ext.profitZone,
+      compound: ext.compound,
+      compoundCount: z.compoundCount,
+      total: ext.extendedTotal,
+    };
+  }
+  return withCompound;
+}
+
 function stat5RecalculateAndRedraw() {
   if (!stat5Detector || !globalStat5Bars.length) return;
   // Đồng bộ detector với config hiện tại
@@ -155,8 +237,11 @@ function stat5RecalculateAndRedraw() {
   stat5Detector.timeframe = STAT5_CFG.interval;
 
   stat5RecalcIndicators();
+  stat5RunAnalysis();
   const result = stat5Detector.reDetect();
-  stat5ApplyZones(result.zones);
+  const zones = stat5PostProcessZones(result.zones);
+  stat5Detector.zones = zones;
+  stat5ApplyZones(zones);
   requestAnimationFrame(drawStat5Overlay);
 }
 
@@ -176,7 +261,11 @@ function stat5OnBarUpdate(bar) {
     const closedBar = stat5Detector.candles[stat5Detector.candles.length - 1];
     if (closedBar && closedBar.time === stat5LastBarTime) {
       const result = stat5Detector.onCandleClosed(closedBar);
-      stat5ApplyZones(result.zones);
+      const zones = stat5PostProcessZones(result.zones);
+      stat5Detector.zones = zones;
+      stat5ApplyZones(zones);
+      stat5RunAnalysis();
+      stat5UpdateHUD();
     }
   }
   stat5LastBarTime = bar.time;
@@ -242,24 +331,42 @@ async function stat5LoadSymbolData() {
   stat5Detector.timeframe = STAT5_CFG.interval;
   const result = stat5Detector.detect(bars);
   stat5RecalcIndicators();
-  stat5ApplyZones(result.zones);
+  stat5RunAnalysis();
+  const zones = stat5PostProcessZones(result.zones);
+  stat5Detector.zones = zones;
+  stat5ApplyZones(zones);
   requestAnimationFrame(drawStat5Overlay);
 
   stat5Status("ready", `${bars.length.toLocaleString()} nến`);
   stat5Chart.timeScale().scrollToRealTime();
   stat5SetupRealtime();
+
+  // Refresh analysis định kỳ (HUD trend/regime theo thời gian thực)
+  if (window._stat5AnalysisTimer) clearInterval(window._stat5AnalysisTimer);
+  window._stat5AnalysisTimer = setInterval(() => {
+    if (!STAT5_CFG.analysis.enabled) return;
+    stat5RunAnalysis();
+    stat5PostProcessZones(stat5Detector.getZones());
+    stat5UpdateHUD();
+    requestAnimationFrame(drawStat5Overlay);
+  }, 30000);
 }
 
 // ─── Zone list ───────────────────────────────────────────────
 function stat5RenderZoneList() {
   const list = stat5El("stat5-zone-list");
   if (!list) return;
+  const showPro = STAT5_CFG.analysis.enabled && STAT5_CFG.analysis.extendedScore;
   list.innerHTML = stat5ZoneList.map((z) => {
     const color = z.type === "demand" ? "#00E676" : "#FF5252";
+    const compoundTag = z.extended && z.extended.compoundCount > 0
+      ? `<span class="stat5-zone-compound" title="Compound zone (${z.extended.compoundCount + 1} cluster)">⚡</span>` : "";
     return `<div class="stat5-zone-row" data-id="${z.id}">
       <span class="stat5-zone-f" style="color:${color}">${z.formation}</span>
       <span class="stat5-zone-score">${z.score}</span>
+      ${showPro && z.proScore !== undefined ? `<span class="stat5-zone-pro">${z.proScore}</span>` : ""}
       <span class="stat5-zone-status ${z.status}">${z.status}</span>
+      ${compoundTag}
       <span class="stat5-zone-prices">${z.proximal.toFixed(2)} / ${z.distal.toFixed(2)}</span>
     </div>`;
   }).join("") || `<div class="stat5-zone-empty">No zones match filters</div>`;
@@ -291,6 +398,20 @@ function stat5ShowZoneInfo(z) {
   const color = z.type === "demand" ? "#00E676" : "#FF5252";
   const fmtTime = (t) => t ? new Date(t * 1000).toISOString().replace("T", " ").slice(0, 16) + " UTC" : "—";
   const row = (label, value) => `<div class="stat5-info-row"><span class="stat5-info-label">${label}</span><span class="stat5-info-value">${value}</span></div>`;
+
+  let extHtml = "";
+  if (z.extended) {
+    const e = z.extended;
+    const fmtV = (o) => `${o.value}/${o.max}`;
+    extHtml = `
+      ${row("Pro score (7 enhancers)", `<b>${z.proScore ?? "—"}</b>`)}
+      ${row("Trend alignment", `${fmtV(e.trend)} ${e.trend.explanation.split(" — ")[0] || e.trend.explanation}`)}
+      ${row("Momentum (RSI)", `${fmtV(e.momentum)}`)}
+      ${row("Profit zone R:R", `${fmtV(e.profitZone)} ${e.profitZone.explanation}`)}
+      ${row("Compound cluster", `${e.compoundCount > 0 ? `${e.compoundCount + 1} zones ⚡` : "standalone"}`)}
+    `;
+  }
+
   panel.innerHTML = `
     <div class="stat5-zone-info-head" style="border-color:${color}">
       <span style="color:${color};font-weight:700">${z.formation}</span>
@@ -311,6 +432,7 @@ function stat5ShowZoneInfo(z) {
       ${row("Test count", z.testCount)}
       ${row("Penetration", `${Math.round(z.penetrationPercent * 100)}%`)}
       ${row("Score", `S${z.scores.strength.value.toFixed(1)}/2 · T${z.scores.time.value}/1 · F${z.scores.freshness.value}/2`)}
+      ${extHtml}
       ${row("Created", fmtTime(z.createdAt))}
       ${row("Invalidated", fmtTime(z.invalidatedAt))}
     </div>`;
@@ -328,11 +450,42 @@ function stat5UpdateHUD() {
   const ovU = globalStat5VsrOverlap?.upperArr?.[idx];
   const ovL = globalStat5VsrOverlap?.lowerArr?.[idx];
   const isOv = Number.isFinite(ovU) && Number.isFinite(ovL);
+
+  // Analysis HUD
+  let analysisHtml = "";
+  if (STAT5_CFG.analysis.enabled) {
+    const rsi = ffxComputeRSI(globalStat5Bars.slice(-40), 14);
+    if (stat5Regime) {
+      const regimeCls = {
+        trending: "tag-up", ranging: "", volatile: "tag-warn", low_volatility: "tag-dim",
+      }[stat5Regime.regime] || "";
+      analysisHtml += `<div class="hud-item"><span class="hud-lbl">REGIME</span> <span class="${regimeCls}">${stat5Regime.regime.replace("_", " ")}</span></div>`;
+    }
+    if (stat5Trend && stat5Trend.direction) {
+      const dirCls = stat5Trend.direction === "up" ? "tag-up" : "tag-down";
+      const statusTag = stat5Trend.status === "confirmed" ? "" : " (forming)";
+      analysisHtml += `<div class="hud-item"><span class="hud-lbl">TREND</span> <span class="${dirCls}">${stat5Trend.direction === "up" ? "▲ UP" : "▼ DOWN"}${statusTag}</span></div>`;
+    }
+    if (rsi !== null) {
+      const rsiCls = rsi > 70 ? "tag-warn" : rsi < 30 ? "tag-warn" : "";
+      analysisHtml += `<div class="hud-item"><span class="hud-lbl">RSI</span> <span class="${rsiCls}">${rsi.toFixed(0)}</span></div>`;
+    }
+    if (stat5Regime && stat5Regime.adx > 0) {
+      analysisHtml += `<div class="hud-item"><span class="hud-lbl">ADX</span> <b>${stat5Regime.adx.toFixed(0)}</b></div>`;
+    }
+    if (stat5Divergences.length) {
+      const lastDiv = stat5Divergences[0];
+      const divCls = lastDiv.type.includes("bullish") ? "tag-up" : "tag-down";
+      analysisHtml += `<div class="hud-item"><span class="hud-lbl">DIV</span> <span class="${divCls}">${lastDiv.type.replace("_", " ")}</span></div>`;
+    }
+  }
+
   el.innerHTML = `
     <div class="hud-item"><span class="hud-lbl">ATR1 BIAS</span> ${stBadge(globalStat5Bot1?.states?.[idx])}</div>
     <div class="hud-item"><span class="hud-lbl">ATR2 ENTRY</span> ${stBadge(globalStat5Bot2?.states?.[idx])}</div>
     <div class="hud-item"><span class="hud-lbl">S&amp;D</span> <b class="${stat5ZoneList.length ? "highlight" : "dim"}">${stat5ZoneList.filter((z) => z.status === "fresh").length} fresh</b></div>
-    <div class="hud-item"><span class="hud-lbl">VSR Overlap</span> <b class="${isOv ? "highlight" : "dim"}">${isOv ? "ON" : "OFF"}</b></div>
+    <div class="hud-item"><span class="hud-lbl">VSR Ov</span> <b class="${isOv ? "highlight" : "dim"}">${isOv ? "ON" : "OFF"}</b></div>
+    ${analysisHtml}
   `;
 }
 
@@ -545,6 +698,39 @@ function stat5InitToolbar() {
       stat5RenderDebug();
     });
   }
+
+  // ── ForexFlow analysis toggles ──
+  const bindAnalysisToggle = (id, path, onRedetect) => {
+    const el = stat5El(id);
+    if (!el) return;
+    el.checked = !!stat5GetNested(STAT5_CFG, path);
+    el.addEventListener("change", () => {
+      stat5SetNestedProperty(STAT5_CFG, path, el.checked);
+      stat5SaveConfig();
+      if (onRedetect) stat5RecalculateAndRedraw();
+      else {
+        stat5RunAnalysis();
+        stat5UpdateHUD();
+        requestAnimationFrame(drawStat5Overlay);
+      }
+    });
+  };
+  bindAnalysisToggle("stat5-ana-trend", "analysis.trend", false);
+  bindAnalysisToggle("stat5-ana-div", "analysis.divergence", false);
+  bindAnalysisToggle("stat5-ana-fib", "analysis.fibonacci", false);
+  bindAnalysisToggle("stat5-ana-keylevels", "analysis.keyLevels", false);
+  bindAnalysisToggle("stat5-ana-regime", "analysis.regime", false);
+  bindAnalysisToggle("stat5-ana-extscore", "analysis.extendedScore", true);
+}
+
+function stat5GetNested(obj, path) {
+  const parts = path.split(".");
+  let cur = obj;
+  for (const p of parts) {
+    if (cur === null || cur === undefined) return undefined;
+    cur = cur[p];
+  }
+  return cur;
 }
 
 // ─── Boot ────────────────────────────────────────────────────

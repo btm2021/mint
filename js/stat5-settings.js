@@ -51,6 +51,7 @@ function stat5RenderSettingsModal() {
     { id: "vsr2", label: "VSR 2" },
     { id: "vsrOverlap", label: "VSR Overlap" },
     { id: "snd", label: "Supply & Demand" },
+    { id: "analysis", label: "Analysis Pro" },
     { id: "general", label: "Chart / Dữ liệu" },
   ];
 
@@ -217,6 +218,31 @@ function stat5RenderSettingsModal() {
         ${toggle("Hiện Zone Invalidated", "snd.showInvalidated", C.snd.showInvalidated)}
         ${toggle("Chế độ DEBUG (log + markers)", "snd.debug", C.snd.debug)}
       </div>`;
+  } else if (stat5ActiveSettingsTab === "analysis") {
+    const A = C.analysis;
+    html = `
+      <div class="panel-sec">
+        <div class="panel-sec-header">ForexFlow Extended Analysis</div>
+        ${toggle("Bật Pipeline Phân Tích", "analysis.enabled", A.enabled)}
+        ${toggle("Extended Zone Scoring (Pro Score 0-12)", "analysis.extendedScore", A.extendedScore)}
+        ${toggle("Trend Detection (swings + segments)", "analysis.trend", A.trend)}
+        ${toggle("Regime Detection (HUD)", "analysis.regime", A.regime)}
+        ${toggle("Divergence (RSI/MACD)", "analysis.divergence", A.divergence)}
+        ${toggle("Fibonacci Retracement + OTE", "analysis.fibonacci", A.fibonacci)}
+        ${toggle("Key Levels (round numbers)", "analysis.keyLevels", A.keyLevels)}
+      </div>
+      <div class="panel-sec">
+        <div class="panel-sec-header">Tham số Trend Detection</div>
+        ${num("Swing Strength (0 = auto theo TF)", "analysis.trendConfig.swingStrength", A.trendConfig.swingStrength, 0, 20, 1)}
+        ${num("Min Segment (×ATR)", "analysis.trendConfig.minSegmentAtr", A.trendConfig.minSegmentAtr, 0.1, 3, 0.1)}
+        ${num("Max Swing Points", "analysis.trendConfig.maxSwingPoints", A.trendConfig.maxSwingPoints, 4, 50, 1)}
+      </div>
+      <div class="panel-sec">
+        <div class="panel-sec-header">Khôi Phục Mặc Định</div>
+        <div style="display:flex;gap:10px;margin-top:8px;">
+          <button class="btn-secondary" onclick="stat5ResetTab('analysis')">Reset Tab</button>
+        </div>
+      </div>`;
   } else {
     html = `
       <div class="panel-sec">
@@ -269,7 +295,7 @@ function stat5BindSettingInputs(container) {
 }
 
 function stat5ResetTab(tab) {
-  const map = { atr1: "atr1", atr2: "atr2", vsr1: "vsr1", vsr2: "vsr2", vsrOverlap: "vsrOverlap", snd: "snd", general: null };
+  const map = { atr1: "atr1", atr2: "atr2", vsr1: "vsr1", vsr2: "vsr2", vsrOverlap: "vsrOverlap", snd: "snd", analysis: "analysis", general: null };
   if (map[tab] === null) return;
   if (confirm(`Khôi phục mặc định cho tab ${tab}?`)) {
     stat5ResetConfig(map[tab]);

@@ -388,6 +388,177 @@ if (globalStat5Bot1 && STAT5_CFG.atr1.enabled) {
       ctx.fill();
     }
   }
+
+  // ── 6. FOREXFLOW EXTENDED ANALYSIS OVERLAYS ──
+  if (STAT5_CFG.analysis.enabled) stat5DrawAnalysis(ctx, timeScale, range);
+}
+
+// Vẽ các overlay phân tích mở rộng (trend / divergence / fibonacci / key levels).
+function stat5DrawAnalysis(ctx, timeScale, range) {
+  const cfg = STAT5_CFG.analysis;
+
+  // ── Key levels (round numbers gần giá hiện tại) ──
+  if (cfg.keyLevels && stat5KeyLevels && stat5KeyLevels.length) {
+    ctx.font = "500 10px 'Outfit', sans-serif";
+    for (const kl of stat5KeyLevels) {
+      const y = stat5CandleSeries.priceToCoordinate(kl.price);
+      if (y === null) continue;
+      ctx.strokeStyle = "rgba(255,193,7,0.35)";
+      ctx.lineWidth = 1;
+      ctx.setLineDash([6, 4]);
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(stat5Canvas.width, y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = "rgba(255,193,7,0.8)";
+      const label = `● ${kl.price.toFixed(4)}`;
+      ctx.fillText(label, stat5Canvas.width - ctx.measureText(label).width - 8, y - 5);
+    }
+  }
+
+  // ── Fibonacci retracement + OTE zone ──
+  if (cfg.fibonacci && stat5Fib) {
+    const fib = stat5Fib;
+    const xStart = -1000;
+    const xEnd = stat5Canvas.width + 1000;
+
+    // OTE zone (61.8% – 78.6%)
+    const yOteH = stat5CandleSeries.priceToCoordinate(fib.oteZone.high);
+    const yOteL = stat5CandleSeries.priceToCoordinate(fib.oteZone.low);
+    if (yOteH !== null && yOteL !== null) {
+      const top = Math.min(yOteH, yOteL), bot = Math.max(yOteH, yOteL);
+      ctx.fillStyle = "rgba(171,71,188,0.08)";
+      ctx.fillRect(xStart, top, xEnd - xStart, bot - top);
+    }
+
+    ctx.font = "500 9.5px 'Outfit', sans-serif";
+    for (const lv of fib.levels) {
+      const y = stat5CandleSeries.priceToCoordinate(lv.price);
+      if (y === null) continue;
+      const isOte = lv.ratio === 0.618 || lv.ratio === 0.786;
+      ctx.strokeStyle = isOte ? "rgba(171,71,188,0.5)" : "rgba(255,255,255,0.22)";
+      ctx.lineWidth = isOte ? 1.5 : 1;
+      ctx.setLineDash(isOte ? [] : [3, 3]);
+      ctx.beginPath();
+      ctx.moveTo(xStart, y);
+      ctx.lineTo(xEnd, y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = isOte ? "#AB47BC" : "rgba(255,255,255,0.45)";
+      const label = `fib ${lv.label}`;
+      ctx.fillText(label, 8, y - 4);
+    }
+  }
+
+  // ── Divergence markers (RSI/MACD) ──
+  if (cfg.divergence && stat5Divergences && stat5Divergences.length) {
+    ctx.font = "500 9px 'Outfit', sans-serif";
+    for (const d of stat5Divergences) {
+      const x1 = timeScale.logicalToCoordinate(d.priceSwing1.index);
+      const x2 = timeScale.logicalToCoordinate(d.priceSwing2.index);
+      const y1 = stat5CandleSeries.priceToCoordinate(d.priceSwing1.price);
+      const y2 = stat5CandleSeries.priceToCoordinate(d.priceSwing2.price);
+      if (x1 === null || x2 === null || y1 === null || y2 === null) continue;
+      const bullish = d.type.includes("bullish");
+      const color = bullish ? "#00E676" : "#FF5252";
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([2, 3]);
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Label tại swing mới
+      const lx = Math.max(2, x2 + 4);
+      const ly = y2 - 8;
+      ctx.fillStyle = "rgba(10,10,20,0.85)";
+      const label = `${d.indicator} ${d.type.replace("_", " ")} ${d.strength}`;
+      const tw = ctx.measureText(label).width + 8;
+      ctx.fillRect(lx, ly - 8, tw, 14);
+      ctx.fillStyle = color;
+      ctx.fillText(label, lx + 4, ly + 3);
+    }
+  }
+
+  // ── Trend: segments + swing points + controlling swing ──
+  if (cfg.trend && stat5Trend) {
+    const trend = stat5Trend;
+
+    // Segments (nối các swing)
+    if (trend.segments) {
+      for (const seg of trend.segments) {
+        const x1 = timeScale.logicalToCoordinate(seg.from.candleIndex);
+        const x2 = timeScale.logicalToCoordinate(seg.to.candleIndex);
+        const y1 = stat5CandleSeries.priceToCoordinate(seg.from.price);
+        const y2 = stat5CandleSeries.priceToCoordinate(seg.to.price);
+        if (x1 === null || x2 === null || y1 === null || y2 === null) continue;
+        const isBreakout = seg.isBreakout;
+        ctx.strokeStyle = seg.direction === "up"
+          ? (isBreakout ? "rgba(0,230,118,0.95)" : "rgba(0,230,118,0.45)")
+          : (isBreakout ? "rgba(255,82,82,0.95)" : "rgba(255,82,82,0.45)");
+        ctx.lineWidth = isBreakout ? 2.2 : 1.2;
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+        ctx.stroke();
+      }
+    }
+
+    // Swing points + labels (HH/HL/LH/LL)
+    if (trend.swingPoints) {
+      ctx.font = "600 9.5px ui-monospace, Menlo, monospace";
+      for (const sw of trend.swingPoints) {
+        const x = timeScale.logicalToCoordinate(sw.candleIndex);
+        const y = stat5CandleSeries.priceToCoordinate(sw.price);
+        if (x === null || y === null) continue;
+        const isHigh = sw.type === "high";
+        ctx.fillStyle = isHigh ? "#FF5252" : "#00E676";
+        ctx.beginPath();
+        ctx.arc(x, y, 3.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = "#0B0B0E";
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        const labelY = isHigh ? y - 9 : y + 15;
+        const isControlling = trend.controllingSwing && trend.controllingSwing.id === sw.id;
+        if (isControlling) {
+          ctx.strokeStyle = "rgba(255,193,7,0.55)";
+          ctx.lineWidth = 1;
+          ctx.setLineDash([5, 4]);
+          ctx.beginPath();
+          ctx.moveTo(x - 60, y);
+          ctx.lineTo(x + 60, y);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+        ctx.fillStyle = isControlling ? "#FFC107" : isHigh ? "#FF8A80" : "#69F0AE";
+        ctx.fillText(sw.label, x + 6, labelY);
+      }
+    }
+
+    // Trend direction + status label (góc trái trên vùng trend mới nhất)
+    if (trend.direction) {
+      const lastSwing = trend.swingPoints[trend.swingPoints.length - 1];
+      if (lastSwing) {
+        const x = timeScale.logicalToCoordinate(lastSwing.candleIndex);
+        const y = stat5CandleSeries.priceToCoordinate(lastSwing.price);
+        if (x !== null && y !== null) {
+          const up = trend.direction === "up";
+          const label = `${up ? "▲ UPTREND" : "▼ DOWNTREND"} · ${trend.status}`;
+          ctx.font = "700 10px 'Outfit', sans-serif";
+          const tw = ctx.measureText(label).width + 12;
+          ctx.fillStyle = "rgba(10,10,20,0.9)";
+          ctx.fillRect(x + 20, y + (up ? -34 : 6), tw, 17);
+          ctx.fillStyle = up ? "#00E676" : "#FF5252";
+          ctx.fillText(label, x + 26, y + (up ? -21 : 17));
+        }
+      }
+    }
+  }
 }
 
 // Hit-test zone dưới crosshair.

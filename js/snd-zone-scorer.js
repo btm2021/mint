@@ -133,3 +133,108 @@ function sndScoreZone(zone, classified, opposing, config) {
     penetrationPercent: freshness.penetrationPercent,
   };
 }
+
+// ============================================================
+// EXTENDED SCORING (port từ scoreZoneExtended của ForexFlow)
+// 7 Odds Enhancers: Strength + Time + Freshness (base 0-5)
+//                  + Trend + Momentum + Profit Zone + Compound (0-7)
+// extendedTotal: 0-12 → proScore: 0-100
+// ctx = {
+//   trendData,        // từ ffxDetectTrend
+//   allZones,         // các zone đã detect (cho R:R tới zone đối lập)
+//   currentPrice,     // giá hiện tại
+//   momentumValue,    // 0-1 từ ffxScoreMomentum (tính ở app layer)
+//   compoundCount,    // từ ffxDetectCompoundZones
+// }
+// ============================================================
+
+// Trend alignment: demand + uptrend / supply + downtrend.
+function sndScoreTrend(zoneType, trendData) {
+  if (!trendData || !trendData.direction) {
+    return { value: 0, max: 2, label: "Poor", explanation: "No trend detected" };
+  }
+  const aligned =
+    (zoneType === "demand" && trendData.direction === "up") ||
+    (zoneType === "supply" && trendData.direction === "down");
+  if (!aligned) {
+    return {
+      value: 0,
+      max: 2,
+      label: "Poor",
+      explanation: `${trendData.direction === "up" ? "Uptrend" : "Downtrend"} opposes ${zoneType} zone`,
+    };
+  }
+  if (trendData.status === "confirmed") {
+    return { value: 2, max: 2, label: "Best", explanation: `Confirmed ${trendData.direction}trend aligns with ${zoneType} zone` };
+  }
+  if (trendData.status === "forming") {
+    return { value: 1, max: 2, label: "Good", explanation: `Forming ${trendData.direction}trend aligns with ${zoneType} zone` };
+  }
+  return { value: 0, max: 2, label: "Poor", explanation: "Trend terminated" };
+}
+
+// Profit zone: R:R tới zone đối lập còn fresh gần nhất.
+// ≥3:1 → 3, ≥2:1 → 2, ≥1:1 → 1, <1:1 hoặc không có → 0 (fallback 2:1).
+function sndScoreProfitZone(zone, allZones) {
+  const risk = Math.abs(zone.proximal - zone.distal);
+  if (risk === 0) return { value: 0, max: 3, label: "Poor", explanation: "Zero risk distance" };
+
+  const opposingType = zone.type === "demand" ? "supply" : "demand";
+  const freshOpposing = (allZones || [])
+    .filter((z) => z.type === opposingType && z.status === "fresh" && z.testCount === 0)
+    .sort((a, b) => (zone.type === "demand" ? a.proximal - b.proximal : b.proximal - a.proximal));
+
+  let reward, tpSource;
+  if (freshOpposing.length > 0) {
+    reward = Math.abs(freshOpposing[0].proximal - zone.proximal);
+    tpSource = "opposing fresh zone";
+  } else {
+    reward = risk * 2;
+    tpSource = "2:1 fallback (no opposing zone)";
+  }
+
+  const rr = reward / risk;
+  let value, label;
+  if (rr >= 3) { value = 3; label = "Best"; }
+  else if (rr >= 2) { value = 2; label = "Good"; }
+  else if (rr >= 1) { value = 1; label = "Fair"; }
+  else { value = 0; label = "Poor"; }
+
+  return { value, max: 3, label, explanation: `${rr.toFixed(1)}:1 R:R to ${tpSource}` };
+}
+
+// Extended scoring tổng hợp. Trả về đầy đủ breakdown + proScore.
+function sndScoreZoneExtended(zone, classified, opposing, config, ctx = {}) {
+  const base = sndScoreZone(zone, classified, opposing, config);
+  const trend = sndScoreTrend(zone.type, ctx.trendData);
+  const profitZone = sndScoreProfitZone(zone, ctx.allZones);
+
+  const momentumValue = ctx.momentumValue ?? 0;
+  const compoundCount = ctx.compoundCount ?? 0;
+  const momentum = {
+    value: Math.max(0, Math.min(1, momentumValue)),
+    max: 1,
+    label: "Momentum",
+    explanation: momentumValue > 0 ? "RSI confluence at zone" : "No momentum confluence",
+  };
+  const compound = {
+    value: ffxCompoundBonus(compoundCount),
+    max: 1,
+    label: "Compound",
+    explanation: compoundCount >= 1 ? `Part of ${compoundCount + 1}-zone compound cluster` : "Standalone zone",
+  };
+
+  const extendedTotal = Math.round((base.scores.total + trend.value + momentum.value + profitZone.value + compound.value) * 100) / 100;
+  const proScore = Math.round((extendedTotal / 12) * 100);
+
+  return {
+    base,
+    trend,
+    momentum,
+    profitZone,
+    compound,
+    compoundCount,
+    extendedTotal,
+    proScore,
+  };
+}

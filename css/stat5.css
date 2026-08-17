@@ -129,6 +129,9 @@ body {
 .stat5-check.alt input { accent-color: #9c27b0; }
 .stat5-check.debug input { accent-color: var(--warn); }
 .stat5-check.debug { color: var(--warn); }
+.stat5-check.ana input { accent-color: #AB47BC; }
+.stat5-check.ana.pro input { accent-color: #FFC107; }
+.stat5-check.ana { color: #C9B8E8; }
 
 /* ==================== CHART ==================== */
 #stat5-chart-wrapper { position: relative; flex: 1; min-height: 0; display: flex; touch-action: none; }
@@ -150,6 +153,8 @@ body {
 .hud-item .dim { color: #3a4255; }
 .tag-up { background: rgba(0,230,118,0.15); color: var(--accent); padding: 1px 5px; border-radius: 3px; font-size: 9px; font-weight: 700; }
 .tag-down { background: rgba(255,82,82,0.15); color: var(--danger); padding: 1px 5px; border-radius: 3px; font-size: 9px; font-weight: 700; }
+.tag-warn { background: rgba(255,193,7,0.15); color: var(--warn); padding: 1px 5px; border-radius: 3px; font-size: 9px; font-weight: 700; }
+.tag-dim { background: rgba(128,128,128,0.15); color: #9aa0a6; padding: 1px 5px; border-radius: 3px; font-size: 9px; font-weight: 700; }
 
 /* Zone info */
 #stat5-zone-info { position: absolute; top: 8px; right: 250px; z-index: 12; width: 250px; background: rgba(12,12,22,0.94); border: 1px solid var(--border-bright); border-radius: 10px; box-shadow: 0 14px 40px rgba(0,0,0,0.6); backdrop-filter: blur(6px); display: none; max-height: calc(100% - 16px); overflow-y: auto; }
@@ -179,6 +184,8 @@ body {
 .stat5-zone-row:hover { background: rgba(255,255,255,0.05); }
 .stat5-zone-f { font-weight: 700; width: 34px; }
 .stat5-zone-score { font-weight: 700; color: #fff; width: 26px; text-align: right; }
+.stat5-zone-pro { font-weight: 600; color: #AB47BC; width: 26px; text-align: right; font-size: 10px; }
+.stat5-zone-compound { color: #FFC107; font-size: 10px; }
 .stat5-zone-prices { margin-left: auto; color: var(--text-dim); font-size: 10px; font-variant-numeric: tabular-nums; }
 .stat5-zone-empty { padding: 20px 12px; text-align: center; color: #3a4255; font-size: 11px; }
 
