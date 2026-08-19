@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="vi">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>MintChart · Final Pro (Stat2 + ForexFlow Full Suite)</title>
+
+  <!-- Libraries -->
+  <script src="https://unpkg.com/lightweight-charts@5.1.0/dist/lightweight-charts.standalone.production.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <link rel="icon" type="image/png" href="icon-192.png">
+  <link rel="stylesheet" href="css/final.css">
+</head>
+
+<body>
+  <!-- TOP PROGRESS BAR -->
+  <div id="final-progress-bar-container">
+    <div id="final-progress-bar-fill"></div>
+  </div>
+
+  <!-- CLEAN, BALANCED 3-ZONE PROFESSIONAL HEADER-BAR -->
+  <header id="final-topbar">
+    <!-- LEFT GROUP: Sidebar Menu + Brand Logo + App Switcher -->
+    <div class="tb-group tb-left">
+      <button class="tb-icon-btn sidebar-trigger" id="final-sidebar-toggle-btn" title="Mở bảng Cài đặt & Tuỳ chọn (Settings)">
+        <span class="tb-icon">☰</span>
+      </button>
+
+      <a href="index.html" class="tb-brand" title="Quay lại MintChart gốc">
+        <div class="tb-logo-badge">FX</div>
+        <span class="tb-title">FINAL <small>PRO</small></span>
+      </a>
+
+      <div class="tb-nav-switch">
+        <a href="stat2.html" class="tb-nav-btn" title="Mở trang Stat2 chuẩn">📊 Stat2</a>
+        <a href="stat5.html" class="tb-nav-btn" title="Mở trang Stat5 S&D">⚡ Stat5</a>
+      </div>
+    </div>
+
+    <!-- CENTER GROUP: Unified Symbol Picker + Timeframe Segmented Control -->
+    <div class="tb-group tb-center">
+      <!-- Integrated Unified Search Pill -->
+      <div class="tb-symbol-pill" id="final-symbol-picker" title="Nhấp để tìm kiếm cặp tiền / tài sản">
+        <span class="tb-sym-icon">🔍</span>
+        <input id="final-symbol-input" class="tb-sym-input" type="text" placeholder="Tìm kiếm..." readonly />
+        <span id="final-source-badge" class="tb-source-tag binance-futures">FUTURES</span>
+      </div>
+
+      <!-- Timeframe Segmented Control -->
+      <div class="tb-interval-segment" id="final-interval-pills">
+        <button class="final-iv-btn" data-iv="1m">1m</button>
+        <button class="final-iv-btn" data-iv="5m">5m</button>
+        <button class="final-iv-btn active" data-iv="15m">15m</button>
+        <button class="final-iv-btn" data-iv="1h">1h</button>
+        <button class="final-iv-btn" data-iv="4h">4h</button>
+        <button class="final-iv-btn" data-iv="1d">1D</button>
+      </div>
+    </div>
+
+    <!-- RIGHT GROUP: Live Market Ticker + Status + Settings Trigger -->
+    <div class="tb-group tb-right">
+      <div class="tb-live-ticker">
+        <span id="final-ticker-price">—</span>
+        <span id="final-ticker-change" class="tb-ticker-badge badge-up">—</span>
+      </div>
+
+      <div class="tb-status-indicator" id="final-status">
+        <span class="pulse-dot"></span>
+        <span class="status-txt">Live</span>
+      </div>
+
+      <button class="tb-icon-btn gear-trigger" id="final-sidebar-toggle-btn-2" title="Cài đặt tham số & tuỳ chọn">
+        <span class="tb-icon">⚙️</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- EXPANDED 2-COLUMN LEFT SLIDING SIDEBAR DRAWER & BACKDROP -->
+  <div id="final-sidebar-backdrop" class="final-sidebar-backdrop"></div>
+  <aside id="final-sidebar" class="final-sidebar">
+    <div class="sidebar-header">
+      <div class="sidebar-title">
+        <span class="sb-icon">⚙️</span>
+        <span>CÀI ĐẶT & TUỲ CHỌN TOÀN DIỆN</span>
+      </div>
+      <div class="sidebar-header-actions">
+        <button class="sb-header-action-btn" id="final-sidebar-open-modal-btn" title="Mở phóng to cửa sổ cài đặt">⛶ Phóng To</button>
+        <button class="sidebar-close-btn" id="final-sidebar-close-btn" title="Đóng sidebar (Esc)">✕</button>
+      </div>
+    </div>
+
+    <!-- 2-COLUMN BODY -->
+    <div class="sidebar-body">
+      <!-- LEFT COLUMN: Quick Toggles & Category Navigation Tabs -->
+      <div class="sidebar-left-col">
+        <div class="sidebar-section">
+          <div class="sidebar-section-title">
+            <span>🎛️ BẬT / TẮT CHỈ BÁO</span>
+          </div>
+          <div class="sidebar-toggles-grid">
+            <div class="sb-toggle-card" data-qt="atr1">
+              <div class="sb-toggle-info">
+                <span class="sb-toggle-name">ATRBot 1 (BIAS)</span>
+                <span class="sb-toggle-desc">Xu hướng chính</span>
+              </div>
+              <label class="sb-switch">
+                <input type="checkbox" id="sb-qt-atr1" />
+                <span class="sb-slider"></span>
+              </label>
+            </div>
+
+            <div class="sb-toggle-card" data-qt="atr2">
+              <div class="sb-toggle-info">
+                <span class="sb-toggle-name">ATRBot 2 (ENTRY)</span>
+                <span class="sb-toggle-desc">Tín hiệu vào lệnh</span>
+              </div>
+              <label class="sb-switch">
+                <input type="checkbox" id="sb-qt-atr2" />
+                <span class="sb-slider"></span>
+              </label>
+            </div>
+
+            <div class="sb-toggle-card" data-qt="vsr1">
+              <div class="sb-toggle-info">
+                <span class="sb-toggle-name">VSR 1</span>
+                <span class="sb-toggle-desc">Volume Support 1</span>
+              </div>
+              <label class="sb-switch">
+                <input type="checkbox" id="sb-qt-vsr1" />
+                <span class="sb-slider"></span>
+              </label>
+            </div>
+
+            <div class="sb-toggle-card" data-qt="vsr2">
+              <div class="sb-toggle-info">
+                <span class="sb-toggle-name">VSR 2</span>
+                <span class="sb-toggle-desc">Volume Support 2</span>
+              </div>
+              <label class="sb-switch">
+                <input type="checkbox" id="sb-qt-vsr2" />
+                <span class="sb-slider"></span>
+              </label>
+            </div>
+
+            <div class="sb-toggle-card" data-qt="overlap">
+              <div class="sb-toggle-info">
+                <span class="sb-toggle-name">VSR Overlap</span>
+                <span class="sb-toggle-desc">Vùng Chồng Lấn VSR</span>
+              </div>
+              <label class="sb-switch">
+                <input type="checkbox" id="sb-qt-overlap" />
+                <span class="sb-slider"></span>
+              </label>
+            </div>
+
+            <div class="sb-toggle-card" data-qt="zone">
+              <div class="sb-toggle-info">
+                <span class="sb-toggle-name">S&D Zones</span>
+                <span class="sb-toggle-desc">Cung / Cầu (ForexFlow)</span>
+              </div>
+              <label class="sb-switch">
+                <input type="checkbox" id="sb-qt-zone" />
+                <span class="sb-slider"></span>
+              </label>
+            </div>
+
+            <div class="sb-toggle-card" data-qt="trend">
+              <div class="sb-toggle-info">
+                <span class="sb-toggle-name">Trend & Swings</span>
+                <span class="sb-toggle-desc">Cấu trúc HH/HL/LH/LL</span>
+              </div>
+              <label class="sb-switch">
+                <input type="checkbox" id="sb-qt-trend" />
+                <span class="sb-slider"></span>
+              </label>
+            </div>
+
+            <div class="sb-toggle-card" data-qt="smc">
+              <div class="sb-toggle-info">
+                <span class="sb-toggle-name">SMC Smart Money</span>
+                <span class="sb-toggle-desc">BOS, CHoCH, FVG, OB</span>
+              </div>
+              <label class="sb-switch">
+                <input type="checkbox" id="sb-qt-smc" />
+                <span class="sb-slider"></span>
+              </label>
+            </div>
+
+            <div class="sb-toggle-card" data-qt="struct">
+              <div class="sb-toggle-info">
+                <span class="sb-toggle-name">Structural BE</span>
+                <span class="sb-toggle-desc">Xác nhận dời BE</span>
+              </div>
+              <label class="sb-switch">
+                <input type="checkbox" id="sb-qt-struct" />
+                <span class="sb-slider"></span>
+              </label>
+            </div>
+
+            <div class="sb-toggle-card" data-qt="strategy">
+              <div class="sb-toggle-info">
+                <span class="sb-toggle-name">Chiến Lược & Lệnh</span>
+                <span class="sb-toggle-desc">Mô phỏng Backtest</span>
+              </div>
+              <label class="sb-switch">
+                <input type="checkbox" id="sb-qt-strategy" />
+                <span class="sb-slider"></span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- Category Tab Buttons List -->
+        <div class="sidebar-section">
+          <div class="sidebar-section-title">
+            <span>📑 DANH MỤC CÀI ĐẶT</span>
+          </div>
+          <div class="sidebar-tab-pills vertical" id="final-sidebar-tab-pills"></div>
+        </div>
+      </div>
+
+      <!-- RIGHT COLUMN: Detailed Parameters Content Pane -->
+      <div class="sidebar-right-col">
+        <div class="sidebar-section-title" id="final-sidebar-right-title">
+          <span>⚙️ CHI TIẾT THAM SỐ</span>
+        </div>
+        <div class="sidebar-tab-content-wrapper" id="final-sidebar-tab-content"></div>
+      </div>
+    </div>
+
+    <div class="sidebar-footer">
+      <button class="sb-action-btn danger" id="final-sidebar-reset-btn">🔄 Khôi Phục Mặc Định Toàn Bộ</button>
+    </div>
+  </aside>
+
+  <!-- STRATEGY STATS BAR -->
+  <div id="final-strategy-stats" style="display:none"></div>
+
+  <!-- MAIN CHART WRAPPER -->
+  <div id="final-chart-wrapper">
+    <div id="final-chart-container"></div>
+    <canvas id="final-overlay-canvas"></canvas>
+    <div id="final-indicator-hud"></div>
+  </div>
+
+  <!-- SETTINGS MODAL ĐA TAB (FULL SCREEN MODAL) -->
+  <div id="final-settings-modal" class="final-modal-overlay" style="display:none">
+    <div class="final-settings-card" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <div class="modal-title">
+          <span>⚙</span> Cài Đặt Tham Số & Giao Diện (Final Pro + ForexFlow)
+        </div>
+        <button class="modal-close-btn" id="final-settings-close-btn">✕</button>
+      </div>
+      <div class="settings-layout">
+        <div class="settings-tabs-sidebar" id="final-settings-tabs"></div>
+        <div class="settings-content-pane" id="final-settings-content"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TRADE & ZONE DETAIL MODAL -->
+  <div id="final-trade-modal-overlay" class="final-modal-overlay" style="display:none"></div>
+
+  <!-- SYMBOL SEARCH MODAL (MULTI-SOURCE) -->
+  <div id="final-symbol-modal" class="final-modal-overlay" style="display:none">
+    <div class="final-sym-modal-box" onclick="event.stopPropagation()">
+      <div class="sym-search-header">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+          <div class="sym-input-wrap" style="flex:1;">
+            <span class="sym-input-icon">🔍</span>
+            <input type="text" id="final-modal-search-input" placeholder="Tìm kiếm Symbol (BTC, ETH, EUR_USD, XAU, SOL...)" autocomplete="off" spellcheck="false" />
+          </div>
+          <button class="modal-close-btn" id="final-modal-search-close" style="padding:6px 10px;">✕</button>
+        </div>
+
+        <!-- Category & Data Source Filter Tabs -->
+        <div class="sym-source-tabs" id="final-modal-source-tabs"></div>
+
+        <div class="sym-filter-row">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+            <input type="checkbox" id="final-filter-cached" /> Chỉ hiện mã đã cache
+          </label>
+          <span id="final-symbol-count" style="color:var(--text-dim);font-size:11px;">—</span>
+        </div>
+      </div>
+      <div class="sym-list-pane" id="final-modal-symbol-list"></div>
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="js/db.js"></script>
+  <script src="js/datasources.js"></script>
+  <script src="js/final-forexflow.js"></script>
+  <script src="js/final-indicators.js"></script>
+  <script src="js/final-config.js"></script>
+  <script src="js/final-strategy.js"></script>
+  <script src="js/final-chart.js"></script>
+  <script src="js/final-ui.js"></script>
+  <script src="js/final-main.js"></script>
+</body>
+
+</html>
