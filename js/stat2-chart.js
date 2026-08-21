@@ -13,6 +13,7 @@ let globalStat2Bot2 = null;
 let globalStat2Vsr1 = null;
 let globalStat2Vsr2 = null;
 let globalStat2VsrOverlap = null;
+let globalStat2SDZones = null;
 let globalStat2Trades = [];
 let stat2LastCrosshairLogical = null;
 
@@ -346,6 +347,73 @@ function drawStat2Overlay() {
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
         ctx.fillText("⚡ OVERLAP", lx + 32.5, ly);
+      }
+    }
+  }
+
+  // ================= 3B. VẼ SUPPLY & DEMAND ZONES (ADVANCED) =================
+  if (globalStat2SDZones && cfg.sd.enabled) {
+    const sdCfg = cfg.sd;
+    for (const z of globalStat2SDZones.zones) {
+      if (z.type === "demand" && !sdCfg.showDemand) continue;
+      if (z.type === "supply" && !sdCfg.showSupply) continue;
+      if (z.status === "broken" && !sdCfg.showBroken) continue;
+
+      // Zone kéo từ pivot đến nến bị phá (hoặc mép phải chart)
+      const endIdx = z.brokenIndex != null ? z.brokenIndex : globalStat2Bars.length - 1;
+      if (endIdx < range.from || z.startIndex > range.to) continue;
+
+      let xS = timeScale.logicalToCoordinate(z.startIndex);
+      let xE = timeScale.logicalToCoordinate(endIdx);
+      if (xS === null) xS = -1000;
+      if (xE === null) xE = stat2Canvas.width + 1000;
+
+      const yProx = stat2CandleSeries.priceToCoordinate(z.proximal);
+      const yDist = stat2CandleSeries.priceToCoordinate(z.distal);
+      if (yProx === null || yDist === null) continue;
+
+      const topY = Math.min(yProx, yDist);
+      const botY = Math.max(yProx, yDist);
+      const h = Math.max(2, botY - topY);
+      const w = Math.max(4, xE - xS);
+
+      const isDemand = z.type === "demand";
+      const baseColor = isDemand ? sdCfg.demandColor : sdCfg.supplyColor;
+      const baseOpacity = isDemand ? sdCfg.demandOpacity : sdCfg.supplyOpacity;
+      // Zone fresh đậm nhất, tested mờ đi, broken gần như vô hình
+      const statusFactor = z.status === "broken" ? 0.25 : z.status === "tested" ? 0.55 : 1.0;
+
+      // A. Nền zone
+      ctx.fillStyle = hexToRgba(baseColor, baseOpacity * statusFactor);
+      ctx.fillRect(xS, topY, w, h);
+
+      // B. Viền proximal (mặt kính — nơi giá phản ứng)
+      ctx.strokeStyle = hexToRgba(baseColor, Math.min(1, 0.9 * statusFactor));
+      ctx.lineWidth = 1.4;
+      ctx.setLineDash(getDashArray(z.status === "broken" ? "dotted" : "solid"));
+      ctx.beginPath();
+      ctx.moveTo(xS, isDemand ? botY : topY);
+      ctx.lineTo(xE, isDemand ? botY : topY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // C. Nhãn formation + score + trạng thái
+      if (sdCfg.showLabel) {
+        const statusTxt = z.status === "broken" ? " ✕" : z.testCount > 0 ? ` ·T${z.testCount}` : "";
+        const txt = `${z.formation} ${z.score}${statusTxt}`;
+        ctx.font = "bold 9px 'Outfit', sans-serif";
+        const tw = ctx.measureText(txt).width + 10;
+        const lx = Math.max(2, Math.min(xS + 4, stat2Canvas.width - tw - 2));
+        const ly = isDemand ? botY - 17 : topY + 2;
+        ctx.fillStyle = "rgba(10, 10, 18, 0.88)";
+        ctx.fillRect(lx, ly, tw, 15);
+        ctx.strokeStyle = hexToRgba(baseColor, 0.8 * statusFactor);
+        ctx.lineWidth = 1;
+        ctx.strokeRect(lx, ly, tw, 15);
+        ctx.fillStyle = hexToRgba(baseColor, Math.min(1, 0.55 + 0.45 * statusFactor));
+        ctx.textAlign = "left";
+        ctx.textBaseline = "middle";
+        ctx.fillText(txt, lx + 5, ly + 8);
       }
     }
   }

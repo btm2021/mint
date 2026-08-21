@@ -17,15 +17,17 @@ function recalculateAndRedrawStat2() {
 
   const C = STAT2_CFG;
 
-  // 1. Tính toán 2 ATRBots
+  // 1. Tính toán 2 ATRBots (kèm cải tiến Trail 2: adaptive mult + smoothing)
+  const stat2BotOpts = (sec) => ({ adaptive: sec.adaptive, smoothT2: sec.smoothT2 });
+
   if (C.atr1.enabled) {
-    globalStat2Bot1 = calculateStat2ATRBot(globalStat2Bars, C.atr1.atrLen, C.atr1.maLen, C.atr1.mult, C.atr1.maType, C.atr1.source);
+    globalStat2Bot1 = calculateStat2ATRBot(globalStat2Bars, C.atr1.atrLen, C.atr1.maLen, C.atr1.mult, C.atr1.maType, C.atr1.source, stat2BotOpts(C.atr1));
   } else {
     globalStat2Bot1 = null;
   }
 
   if (C.atr2.enabled) {
-    globalStat2Bot2 = calculateStat2ATRBot(globalStat2Bars, C.atr2.atrLen, C.atr2.maLen, C.atr2.mult, C.atr2.maType, C.atr2.source);
+    globalStat2Bot2 = calculateStat2ATRBot(globalStat2Bars, C.atr2.atrLen, C.atr2.maLen, C.atr2.mult, C.atr2.maType, C.atr2.source, stat2BotOpts(C.atr2));
   } else {
     globalStat2Bot2 = null;
   }
@@ -48,6 +50,13 @@ function recalculateAndRedrawStat2() {
     globalStat2VsrOverlap = calculateStat2VSROverlap(globalStat2Bars, globalStat2Vsr1, globalStat2Vsr2);
   } else {
     globalStat2VsrOverlap = null;
+  }
+
+  // 3.5 Supply & Demand Zones (thuật toán nâng cao)
+  if (C.sd.enabled) {
+    globalStat2SDZones = calculateStat2SDZones(globalStat2Bars, C.sd);
+  } else {
+    globalStat2SDZones = null;
   }
 
   // 4. Tính toán Lệnh Entry / TP / SL
@@ -101,6 +110,7 @@ function syncStat2QuickToggles() {
   syncBtn("qt-vsr1", STAT2_CFG.vsr1.enabled);
   syncBtn("qt-vsr2", STAT2_CFG.vsr2.enabled);
   syncBtn("qt-overlap", STAT2_CFG.vsrOverlap.enabled);
+  syncBtn("qt-sd", STAT2_CFG.sd.enabled);
   syncBtn("qt-strategy", STAT2_CFG.strategy.enabled);
 }
 
@@ -469,6 +479,7 @@ async function initStat2() {
   bindQuickToggle("qt-vsr1", "vsr1.enabled", STAT2_CFG.vsr1.enabled);
   bindQuickToggle("qt-vsr2", "vsr2.enabled", STAT2_CFG.vsr2.enabled);
   bindQuickToggle("qt-overlap", "vsrOverlap.enabled", STAT2_CFG.vsrOverlap.enabled);
+  bindQuickToggle("qt-sd", "sd.enabled", STAT2_CFG.sd.enabled);
   bindQuickToggle("qt-strategy", "strategy.enabled", STAT2_CFG.strategy.enabled);
 
   await loadStat2SymbolData();

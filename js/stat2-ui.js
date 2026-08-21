@@ -20,6 +20,11 @@ const LINE_STYLE_OPTIONS = [
   ["dotted", "Dotted (Chấm)"],
 ];
 
+const ADAPTIVE_MODE_OPTIONS = [
+  ["er", "ER — Efficiency Ratio (Sức mạnh xu hướng)"],
+  ["vol", "Vol Ratio — ATR nhanh/chậm (Biến động)"],
+];
+
 function updateStat2StatsBar() {
   const el = document.getElementById("stat2-strategy-stats");
   if (!el) return;
@@ -171,6 +176,7 @@ function renderStat2SettingsModal() {
     { id: "vsr1", label: "VSR 1" },
     { id: "vsr2", label: "VSR 2" },
     { id: "vsrOverlap", label: "VSR Overlap" },
+    { id: "sd", label: "Supply & Demand" },
     { id: "strategy", label: "Entry / TP / SL" },
     { id: "general", label: "Chart / Dữ liệu" },
   ];
@@ -227,6 +233,27 @@ function renderStat2SettingsModal() {
     </div>
   `;
 
+  // Section cải tiến Trail 2 dùng chung cho ATRBot 1 & 2
+  const trail2EnhanceSection = (key) => {
+    const s = C[key];
+    return `
+      <div class="panel-sec">
+        <div class="panel-sec-header">Cải tiến Trail 2 — Multiplier Thích Ứng</div>
+        ${toggle("Bật Multiplier thích ứng", `${key}.adaptive.enabled`, s.adaptive.enabled)}
+        ${select("Chế độ thích ứng", `${key}.adaptive.mode`, ADAPTIVE_MODE_OPTIONS, s.adaptive.mode)}
+        ${num("Chu kỳ đo xu hướng (ER Length)", `${key}.adaptive.erLen`, s.adaptive.erLen, 2, 500, 1)}
+        ${num("Multiplier tối thiểu (xu hướng mạnh)", `${key}.adaptive.minMult`, s.adaptive.minMult, 0.1, 20, 0.1)}
+        ${num("Multiplier tối đa (đi ngang/nhiễu)", `${key}.adaptive.maxMult`, s.adaptive.maxMult, 0.1, 20, 0.1)}
+      </div>
+
+      <div class="panel-sec">
+        <div class="panel-sec-header">Cải tiến Trail 2 — Làm Mượt Nét</div>
+        ${toggle("Bật làm mượt Trail 2 (EMA)", `${key}.smoothT2.enabled`, s.smoothT2.enabled)}
+        ${num("Chu kỳ EMA làm mượt", `${key}.smoothT2.len`, s.smoothT2.len, 1, 100, 1)}
+      </div>
+    `;
+  };
+
   if (activeSettingsTab === "atr1") {
     html = `
       <div class="panel-sec">
@@ -238,6 +265,8 @@ function renderStat2SettingsModal() {
         ${num("Chu kỳ ATR (ATR Length)", "atr1.atrLen", C.atr1.atrLen, 1, 500, 1)}
         ${num("Hệ số nhân (ATR Multiplier)", "atr1.mult", C.atr1.mult, 0.1, 20, 0.1)}
       </div>
+
+      ${trail2EnhanceSection("atr1")}
 
       <div class="panel-sec">
         <div class="panel-sec-header">Đường Trail 1 (MA Line)</div>
@@ -275,6 +304,8 @@ function renderStat2SettingsModal() {
         ${num("Chu kỳ ATR (ATR Length)", "atr2.atrLen", C.atr2.atrLen, 1, 500, 1)}
         ${num("Hệ số nhân (ATR Multiplier)", "atr2.mult", C.atr2.mult, 0.1, 20, 0.1)}
       </div>
+
+      ${trail2EnhanceSection("atr2")}
 
       <div class="panel-sec">
         <div class="panel-sec-header">Đường Trail 1 (MA Line)</div>
@@ -388,6 +419,46 @@ function renderStat2SettingsModal() {
         ${color("Màu Viền Dưới", "vsrOverlap.lowerColor", C.vsrOverlap.lowerColor)}
         ${num("Độ dày nét", "vsrOverlap.lowerWidth", C.vsrOverlap.lowerWidth, 0.5, 5, 0.5)}
         ${select("Kiểu nét", "vsrOverlap.lowerStyle", LINE_STYLE_OPTIONS, C.vsrOverlap.lowerStyle)}
+      </div>
+    `;
+  } else if (activeSettingsTab === "sd") {
+    html = `
+      <div class="panel-sec">
+        <div class="panel-sec-header">Thuật toán Supply &amp; Demand (Nâng cao)</div>
+        ${toggle("Kích hoạt S&D Zones", "sd.enabled", C.sd.enabled)}
+        ${num("Swing Trái (Pivot Left)", "sd.pivotLeft", C.sd.pivotLeft, 1, 20, 1)}
+        ${num("Swing Phải (Pivot Right)", "sd.pivotRight", C.sd.pivotRight, 1, 20, 1)}
+        ${num("Nhìn lại Leg-In (nến)", "sd.legInLookback", C.sd.legInLookback, 2, 100, 1)}
+      </div>
+
+      <div class="panel-sec">
+        <div class="panel-sec-header">Xác nhận Displacement (Leg-Out)</div>
+        ${num("Số nến đo Leg-Out", "sd.dispLookforward", C.sd.dispLookforward, 2, 50, 1)}
+        ${num("Cú đẩy tối thiểu (× ATR)", "sd.dispAtrMult", C.sd.dispAtrMult, 0.5, 10, 0.1)}
+        ${num("Thân nến cùng hướng (0.05–0.95)", "sd.bodyDominance", C.sd.bodyDominance, 0.05, 0.95, 0.05)}
+        ${toggle("Bắt buộc có FVG (Imbalance)", "sd.requireFvg", C.sd.requireFvg)}
+        ${toggle("Dùng Volume xác nhận", "sd.useVolume", C.sd.useVolume)}
+        ${num("Volume tối thiểu (× trung bình)", "sd.volMult", C.sd.volMult, 1.0, 5, 0.1)}
+      </div>
+
+      <div class="panel-sec">
+        <div class="panel-sec-header">Lọc &amp; Giới hạn Zone</div>
+        ${num("Vùng rộng tối đa (× ATR)", "sd.maxBaseWidthAtr", C.sd.maxBaseWidthAtr, 0.3, 5, 0.1)}
+        ${num("Điểm số tối thiểu (0–100)", "sd.minScore", C.sd.minScore, 0, 100, 5)}
+        ${num("Gộp zone chồng lấn > (0–0.9)", "sd.mergeOverlapPct", C.sd.mergeOverlapPct, 0, 0.9, 0.05)}
+        ${num("Số zone tối đa / loại", "sd.maxZones", C.sd.maxZones, 1, 30, 1)}
+      </div>
+
+      <div class="panel-sec">
+        <div class="panel-sec-header">Hiển thị Zone</div>
+        ${toggle("Hiện Demand Zone", "sd.showDemand", C.sd.showDemand)}
+        ${color("Màu Demand", "sd.demandColor", C.sd.demandColor)}
+        ${slider("Độ mờ Demand", "sd.demandOpacity", C.sd.demandOpacity)}
+        ${toggle("Hiện Supply Zone", "sd.showSupply", C.sd.showSupply)}
+        ${color("Màu Supply", "sd.supplyColor", C.sd.supplyColor)}
+        ${slider("Độ mờ Supply", "sd.supplyOpacity", C.sd.supplyOpacity)}
+        ${toggle("Hiện zone đã bị phá (mờ)", "sd.showBroken", C.sd.showBroken)}
+        ${toggle("Hiện nhãn zone (Formation + Score)", "sd.showLabel", C.sd.showLabel)}
       </div>
     `;
   } else if (activeSettingsTab === "strategy") {

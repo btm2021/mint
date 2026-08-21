@@ -28,6 +28,19 @@ const STAT2_DEFAULT_CONFIG = {
     maLen: 55,
     atrLen: 10,
     mult: 2.0,
+    // Multiplier thích ứng (co giãn theo xu hướng / biến động)
+    adaptive: {
+      enabled: false,
+      mode: "er", // "er" (Efficiency Ratio) | "vol" (Volatility Ratio fast/slow ATR)
+      erLen: 20, // Chu kỳ nhìn lại để đo sức mạnh xu hướng
+      minMult: 1.0, // Sàn multiplier khi xu hướng mạnh
+      maxMult: 4.0, // Trần multiplier khi thị trường đi ngang
+    },
+    // Làm mượt Trail 2 (giảm nhiễu & flip giả)
+    smoothT2: {
+      enabled: false,
+      len: 5, // Chu kỳ EMA làm mượt Trail 2
+    },
     // Trail 1 (MA)
     showT1: true,
     t1Color: "#26A69A",
@@ -55,6 +68,19 @@ const STAT2_DEFAULT_CONFIG = {
     maLen: 21,
     atrLen: 10,
     mult: 4.0,
+    // Multiplier thích ứng (co giãn theo xu hướng / biến động)
+    adaptive: {
+      enabled: false,
+      mode: "er", // "er" (Efficiency Ratio) | "vol" (Volatility Ratio fast/slow ATR)
+      erLen: 20,
+      minMult: 2.0,
+      maxMult: 6.0,
+    },
+    // Làm mượt Trail 2 (giảm nhiễu & flip giả)
+    smoothT2: {
+      enabled: false,
+      len: 5,
+    },
     // Trail 1 (MA)
     showT1: true,
     t1Color: "#00BCD4",
@@ -128,6 +154,37 @@ const STAT2_DEFAULT_CONFIG = {
     lowerStyle: "solid",
     showHatch: true, // Gạch chéo nổi bật rõ ràng
     showLabel: true, // Hiển thị nhãn OVERLAP
+  },
+
+  // --- SUPPLY & DEMAND ZONES (THUẬT TOÁN NÂNG CAO) ---
+  sd: {
+    enabled: true,
+    name: "Supply & Demand (Advanced)",
+    // Cấu trúc swing (fractal pivot)
+    pivotLeft: 3,
+    pivotRight: 3,
+    legInLookback: 10,
+    // Xác nhận displacement (leg-out)
+    dispLookforward: 8,
+    dispAtrMult: 2.0,
+    bodyDominance: 0.55,
+    requireFvg: false,
+    useVolume: true,
+    volMult: 1.3,
+    // Lọc & giới hạn
+    maxBaseWidthAtr: 2.0,
+    minScore: 55,
+    mergeOverlapPct: 0.35,
+    maxZones: 10,
+    // Hiển thị
+    showDemand: true,
+    demandColor: "#00E676",
+    demandOpacity: 0.13,
+    showSupply: true,
+    supplyColor: "#FF5252",
+    supplyOpacity: 0.13,
+    showBroken: false,
+    showLabel: true,
   },
 
   // --- ENTRY / TP / SL ---

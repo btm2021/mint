@@ -3,7 +3,11 @@
 // ============================================================
 
 // 1. ATRBot Algorithm (16 MA types + 7 Sources)
-function calculateStat2ATRBot(bars, atrLen = 14, maLen = 30, mult = 2.0, maType = "ema", source = "close") {
+// opts (tuỳ chọn, chỉ stat2 dùng): {
+//   adaptive: { enabled, mode: "er"|"vol", erLen, minMult, maxMult },
+//   smoothT2: { enabled, len }
+// }
+function calculateStat2ATRBot(bars, atrLen = 14, maLen = 30, mult = 2.0, maType = "ema", source = "close", opts = null) {
   if (!bars || bars.length === 0) return { t1Data: [], t2Data: [], cycles: [], t1Arr: [], t2Arr: [], states: [] };
 
   const sourceValue = (bar) => {
@@ -49,6 +53,51 @@ function calculateStat2ATRBot(bars, atrLen = 14, maLen = 30, mult = 2.0, maType 
   const atr = new Array(n);
   for (let i = 0; i < n; i++) {
     atr[i] = i === 0 ? tr[i] : (atr[i - 1] * (atrLen - 1) + tr[i]) / atrLen;
+  }
+
+  // --- Cải tiến Trail 2 #1: Multiplier thích ứng ---
+  // "er"  : Kaufman Efficiency Ratio — xu hướng mạnh (ER→1) => trail siết về minMult,
+  //         đi ngang/giả (ER→0) => trail nới ra maxMult để tránh flip nhiễu.
+  // "vol" : Tỉ lệ ATR nhanh/chậm — biến động mở rộng (VR>1) => nới trail,
+  //         biến động co lại (VR<1) => siết trail để giữ lợi nhuận.
+  const adp = opts && opts.adaptive ? opts.adaptive : null;
+  const adpEnabled = !!(adp && adp.enabled);
+  const effMultArr = new Array(n).fill(mult);
+
+  if (adpEnabled) {
+    const minRaw = Number.isFinite(+adp.minMult) ? +adp.minMult : mult * 0.5;
+    const maxRaw = Number.isFinite(+adp.maxMult) ? +adp.maxMult : mult * 2;
+    const lo = Math.min(minRaw, maxRaw);
+    const hi = Math.max(minRaw, maxRaw);
+    const erLen = Math.max(1, Math.floor(+adp.erLen || 20));
+    const mode = String(adp.mode || "er").toLowerCase();
+
+    // ATR nhanh cho chế độ "vol" (nửa chu kỳ ATR chính)
+    let atrFast = null;
+    if (mode === "vol") {
+      const fastLen = Math.max(1, Math.floor(atrLen / 2));
+      atrFast = new Array(n);
+      for (let i = 0; i < n; i++) {
+        atrFast[i] = i === 0 ? tr[i] : (atrFast[i - 1] * (fastLen - 1) + tr[i]) / fastLen;
+      }
+    }
+
+    for (let i = 0; i < n; i++) {
+      let m = mult;
+      if (mode === "vol") {
+        const vr = atr[i] > 0 ? atrFast[i] / atr[i] : 1;
+        m = mult * vr;
+      } else {
+        // Efficiency Ratio trên cửa sổ erLen (dùng dữ liệu sẵn có khi chưa đủ dài)
+        const start = Math.max(1, i - erLen + 1);
+        const change = Math.abs(values[i] - values[start - 1]);
+        let volatility = 0;
+        for (let j = start; j <= i; j++) volatility += Math.abs(values[j] - values[j - 1]);
+        const er = volatility > 0 ? change / volatility : 0;
+        m = lo + (hi - lo) * (1 - er);
+      }
+      effMultArr[i] = Math.min(hi, Math.max(lo, m));
+    }
   }
 
   // Trail 1 (MA)
@@ -191,10 +240,9 @@ function calculateStat2ATRBot(bars, atrLen = 14, maLen = 30, mult = 2.0, maType 
 
   // Trail 2 & Trend State
   const trail2 = new Array(n);
-  const states = new Array(n); // 1 = Bullish, -1 = Bearish
 
   for (let i = 0; i < n; i++) {
-    const loss = atr[i] * mult;
+    const loss = atr[i] * (adpEnabled ? effMultArr[i] : mult);
     const t1 = trail1[i];
     const previousTrail2 = i === 0 ? 0 : trail2[i - 1];
     const previousTrail1 = i === 0 ? t1 : trail1[i - 1];
@@ -204,7 +252,26 @@ function calculateStat2ATRBot(bars, atrLen = 14, maLen = 30, mult = 2.0, maType 
     } else {
       trail2[i] = t1 < previousTrail2 && previousTrail1 < previousTrail2 ? Math.min(previousTrail2, t1 + loss) : t1 + loss;
     }
-    states[i] = t1 > trail2[i] ? 1 : -1;
+  }
+
+  // --- Cải tiến Trail 2 #2: Làm mượt Trail 2 bằng EMA ngắn ---
+  // Giảm nhiễu ở vùng giá đi ngang => ít flip giả hơn cho strategy.
+  // State (states/cycles) được suy ra từ Trail 2 ĐÃ làm mượt.
+  const smCfg = opts && opts.smoothT2 ? opts.smoothT2 : null;
+  let finalTrail2 = trail2;
+  if (smCfg && smCfg.enabled) {
+    const smLen = Math.max(1, Math.floor(+smCfg.len || 5));
+    const a = 2 / (smLen + 1);
+    const smoothed = new Array(n);
+    for (let i = 0; i < n; i++) {
+      smoothed[i] = i === 0 ? trail2[0] : a * trail2[i] + (1 - a) * smoothed[i - 1];
+    }
+    finalTrail2 = smoothed;
+  }
+
+  const states = new Array(n); // 1 = Bullish, -1 = Bearish
+  for (let i = 0; i < n; i++) {
+    states[i] = trail1[i] > finalTrail2[i] ? 1 : -1;
   }
 
   // Build Output Data & Extract Cycles
@@ -216,7 +283,7 @@ function calculateStat2ATRBot(bars, atrLen = 14, maLen = 30, mult = 2.0, maType 
   for (let i = 0; i < n; i++) {
     const t = bars[i].time;
     t1Data.push({ time: t, value: trail1[i] });
-    t2Data.push({ time: t, value: trail2[i] });
+    t2Data.push({ time: t, value: finalTrail2[i] });
 
     if (currentCycle === null) {
       currentCycle = {
@@ -243,9 +310,11 @@ function calculateStat2ATRBot(bars, atrLen = 14, maLen = 30, mult = 2.0, maType 
     t2Data,
     cycles,
     t1Arr: trail1,
-    t2Arr: trail2,
+    t2Arr: finalTrail2,
+    rawT2Arr: trail2,
     states,
     atrArr: atr,
+    multArr: adpEnabled ? effMultArr : null,
   };
 }
 
@@ -395,4 +464,254 @@ function calculateStat2VSROverlap(bars, vsr1Res, vsr2Res) {
   }
 
   return { zones, upperArr, lowerArr };
+}
+
+// 4. ADVANCED SUPPLY & DEMAND ZONES (thuật toán nâng cao riêng cho stat2)
+// Nền tảng chuyên sâu — cấu trúc lệnh tổ chức:
+//   Swing Pivot → Displacement Leg-Out → FVG Imbalance → Volume Confirm
+//   → Zone Construction → Composite Score → Mitigation Tracking
+//
+//   * Swing Pivot: đỉnh/đáy phân dạng (fractal) với sức mạnh L/R nến
+//   * Displacement: cú rời vùng phải ≥ dispAtrMult × ATR trong dispLookforward nến
+//     (chứng minh dòng lệnh tổ chức đã khớp tại vùng)
+//   * Body Dominance: thân nến cùng hướng chiếm tỷ trọng trong leg-out
+//   * FVG (Fair Value Gap): mất cân bằng 3 nến low[k+1] > high[k-1] (bull)
+//     — dấu hiệu order flow một chiều, không có sự đối ứng
+//   * Volume: leg-out phải có volume ≥ volMult × trung bình
+//   * Score 0-100 = Displacement(30) + FVG(20) + Volume(20) + Base Tightness(15) + Recency(15)
+//   * Mitigation: fresh → tested (giá quay lại chạm) → broken (close xuyên distal)
+function calculateStat2SDZones(bars, cfg = {}) {
+  const empty = { zones: [], demand: [], supply: [] };
+  if (!bars || bars.length < 30) return empty;
+
+  const n = bars.length;
+  const L = Math.max(1, Math.floor(cfg.pivotLeft ?? 3));
+  const R = Math.max(1, Math.floor(cfg.pivotRight ?? 3));
+  const legInLookback = Math.max(2, Math.floor(cfg.legInLookback ?? 10));
+  const dispLookforward = Math.max(2, Math.floor(cfg.dispLookforward ?? 8));
+  const dispAtrMult = Math.max(0.5, +cfg.dispAtrMult || 2.0);
+  const bodyDominance = Math.min(0.95, Math.max(0.05, +cfg.bodyDominance || 0.55));
+  const requireFvg = !!cfg.requireFvg;
+  const useVolume = !!cfg.useVolume;
+  const volMult = Math.max(1.0, +cfg.volMult || 1.3);
+  const maxBaseWidthAtr = Math.max(0.3, +cfg.maxBaseWidthAtr || 2.0);
+  const minScore = Number.isFinite(+cfg.minScore) ? +cfg.minScore : 55;
+  const mergeOverlapPct = Math.min(0.9, Math.max(0, Number.isFinite(+cfg.mergeOverlapPct) ? +cfg.mergeOverlapPct : 0.35));
+  const maxZones = Math.max(1, Math.floor(cfg.maxZones || 10));
+
+  // --- ATR Wilder 14 ---
+  const atrLen = 14;
+  const tr = new Array(n);
+  for (let i = 0; i < n; i++) {
+    tr[i] = i === 0
+      ? bars[i].high - bars[i].low
+      : Math.max(bars[i].high - bars[i].low, Math.abs(bars[i].high - bars[i - 1].close), Math.abs(bars[i].low - bars[i - 1].close));
+  }
+  const atr = new Array(n);
+  for (let i = 0; i < n; i++) atr[i] = i === 0 ? tr[0] : (atr[i - 1] * (atrLen - 1) + tr[i]) / atrLen;
+
+  // --- SMA Volume (lookback 20) cho volume ratio ---
+  const volLookback = 20;
+  const volSma = new Array(n);
+  let volSum = 0;
+  for (let i = 0; i < n; i++) {
+    volSum += bars[i].volume;
+    if (i >= volLookback) volSum -= bars[i - volLookback].volume;
+    volSma[i] = volSum / Math.min(i + 1, volLookback);
+  }
+
+  // --- Bước 1+2+3: Quét pivot → validate displacement → dựng zone ---
+  const candidates = [];
+
+  for (let p = L; p <= n - 1 - R; p++) {
+    const a = atr[p];
+    if (!(a > 0)) continue;
+
+    // Fractal pivot: low/high của p là cực trị trong cửa sổ [p-L, p+R]
+    let isPLow = true, isPHigh = true;
+    for (let j = p - L; j <= p + R; j++) {
+      if (j === p) continue;
+      if (bars[j].low < bars[p].low) isPLow = false;
+      if (bars[j].high > bars[p].high) isPHigh = false;
+      if (!isPLow && !isPHigh) break;
+    }
+    if (!isPLow && !isPHigh) continue;
+
+    const outEnd = Math.min(p + dispLookforward, n - 1);
+    if (outEnd <= p + 1) continue; // cần tối thiểu 2 nến leg-out
+
+    for (const kind of ["demand", "supply"]) {
+      if (kind === "demand" && !isPLow) continue;
+      if (kind === "supply" && !isPHigh) continue;
+      const pivot = bars[p];
+
+      // Displacement: cú rời giá phải đủ mạnh so với ATR
+      let moveExtreme;
+      if (kind === "demand") {
+        moveExtreme = -Infinity;
+        for (let k = p + 1; k <= outEnd; k++) moveExtreme = Math.max(moveExtreme, bars[k].high);
+      } else {
+        moveExtreme = Infinity;
+        for (let k = p + 1; k <= outEnd; k++) moveExtreme = Math.min(moveExtreme, bars[k].low);
+      }
+      const moveDist = kind === "demand" ? moveExtreme - pivot.low : pivot.high - moveExtreme;
+      const moveATR = moveDist / a;
+      if (moveATR < dispAtrMult) continue;
+
+      // Body dominance: áp lực một chiều trong leg-out
+      let upBody = 0, downBody = 0;
+      for (let k = p + 1; k <= outEnd; k++) {
+        const body = bars[k].close - bars[k].open;
+        if (body > 0) upBody += body; else downBody -= body;
+      }
+      const totalBody = upBody + downBody;
+      const dominance = totalBody > 0 ? (kind === "demand" ? upBody : downBody) / totalBody : 0;
+      if (dominance < bodyDominance) continue;
+
+      // FVG 3 nến trong leg-out (imbalance = order flow một chiều)
+      let hasFvg = false;
+      for (let k = p + 2; k <= outEnd - 1; k++) {
+        if (kind === "demand") { if (bars[k + 1].low > bars[k - 1].high) { hasFvg = true; break; } }
+        else { if (bars[k + 1].high < bars[k - 1].low) { hasFvg = true; break; } }
+      }
+      if (requireFvg && !hasFvg) continue;
+
+      // Volume xác nhận participation tổ chức
+      let outVol = 0;
+      for (let k = p + 1; k <= outEnd; k++) outVol += bars[k].volume;
+      const outVolAvg = outVol / (outEnd - p);
+      const baseVol = volSma[p] > 0 ? volSma[p] : 1;
+      const volRatio = outVolAvg / baseVol;
+      if (useVolume && volRatio < volMult) continue;
+
+      // Dựng vùng từ cụm gốc: pivot + nến láng giềng nằm gọn trong base
+      let proximal, distal;
+      if (kind === "demand") {
+        distal = pivot.low;
+        proximal = Math.max(pivot.open, pivot.close);
+        for (let k = Math.max(0, p - 2); k <= Math.min(n - 1, p + 2); k++) {
+          if (k === p) continue;
+          if (bars[k].low >= distal - a * 0.15 && bars[k].high <= proximal + a * 0.15) {
+            distal = Math.min(distal, bars[k].low);
+            proximal = Math.max(proximal, Math.max(bars[k].open, bars[k].close));
+          }
+        }
+      } else {
+        distal = pivot.high;
+        proximal = Math.min(pivot.open, pivot.close);
+        for (let k = Math.max(0, p - 2); k <= Math.min(n - 1, p + 2); k++) {
+          if (k === p) continue;
+          if (bars[k].high <= distal + a * 0.15 && bars[k].low >= proximal - a * 0.15) {
+            distal = Math.max(distal, bars[k].high);
+            proximal = Math.min(proximal, Math.min(bars[k].open, bars[k].close));
+          }
+        }
+      }
+
+      const width = Math.abs(proximal - distal);
+      if (width <= 0) continue;
+      const widthATR = width / a;
+      if (widthATR > maxBaseWidthAtr) continue;
+
+      // Formation theo hướng leg-in (trend trước khi vào base)
+      const refIdx = Math.max(0, p - legInLookback);
+      const legInUp = bars[p].close > bars[refIdx].close;
+      let formation;
+      if (kind === "demand") formation = legInUp ? "RBR" : "DBR";
+      else formation = legInUp ? "RBD" : "DBD";
+
+      // Composite score 0-100
+      const sDisp = Math.min(30, (moveATR / 5) * 30);
+      const sFvg = hasFvg ? 20 : 0;
+      const sVol = useVolume ? Math.min(20, Math.max(0, (volRatio - 1) * 20)) : 10;
+      const sBase = widthATR <= 0.5 ? 15 : Math.max(0, 15 * (1 - (widthATR - 0.5) / Math.max(0.01, maxBaseWidthAtr - 0.5)));
+      const sRecency = 15 * (p / (n - 1));
+      const score = Math.round(sDisp + sFvg + sVol + sBase + sRecency);
+
+      candidates.push({
+        type: kind,
+        formation,
+        pivotIndex: p,
+        startIndex: p,
+        endIndex: outEnd,
+        proximal,
+        distal,
+        score,
+        scores: {
+          displacement: Math.round(sDisp),
+          fvg: sFvg,
+          volume: Math.round(sVol),
+          baseTightness: Math.round(sBase),
+          recency: Math.round(sRecency),
+        },
+        moveATR: +moveATR.toFixed(2),
+        widthATR: +widthATR.toFixed(2),
+        volRatio: +volRatio.toFixed(2),
+        hasFvg,
+        dominance: +dominance.toFixed(2),
+        status: "fresh",
+        testCount: 0,
+        testedIndex: null,
+        brokenIndex: null,
+      });
+    }
+  }
+
+  // --- Bước 4: Mitigation tracking (fresh → tested → broken) ---
+  for (const z of candidates) {
+    let inZone = false;
+    for (let t = z.endIndex + 1; t < n; t++) {
+      const b = bars[t];
+      if (z.type === "demand") {
+        if (b.close < z.distal) { z.status = "broken"; z.brokenIndex = t; break; }
+        const touching = b.low <= z.proximal;
+        if (touching && !inZone) {
+          z.testCount++;
+          z.testedIndex = t;
+          z.status = "tested";
+        }
+        inZone = touching;
+      } else {
+        if (b.close > z.distal) { z.status = "broken"; z.brokenIndex = t; break; }
+        const touching = b.high >= z.proximal;
+        if (touching && !inZone) {
+          z.testCount++;
+          z.testedIndex = t;
+          z.status = "tested";
+        }
+        inZone = touching;
+      }
+    }
+  }
+
+  // --- Bước 5: Lọc minScore & gộp zone cùng loại chồng lấn ---
+  const passed = candidates.filter((z) => z.score >= minScore);
+  const mergeGroup = (list) => {
+    const sorted = [...list].sort((x, y) => y.score - x.score);
+    const kept = [];
+    for (const z of sorted) {
+      const dup = kept.some((k) => {
+        const ovTop = Math.min(k.proximal, z.proximal);
+        const ovBot = Math.max(k.distal, z.distal);
+        if (ovTop <= ovBot) return false;
+        const overlapH = ovTop - ovBot;
+        const minH = Math.min(Math.abs(k.proximal - k.distal), Math.abs(z.proximal - z.distal));
+        return overlapH / minH > mergeOverlapPct;
+      });
+      if (!dup) kept.push(z);
+    }
+    return kept;
+  };
+
+  let demands = mergeGroup(passed.filter((z) => z.type === "demand"));
+  let supplies = mergeGroup(passed.filter((z) => z.type === "supply"));
+
+  // --- Bước 6: Giới hạn số lượng (zone active ưu tiên hơn broken) ---
+  const rank = (z) => (z.status === "broken" ? z.score - 10000 : z.score);
+  demands = demands.sort((a, b) => rank(b) - rank(a)).slice(0, maxZones);
+  supplies = supplies.sort((a, b) => rank(b) - rank(a)).slice(0, maxZones);
+
+  const zones = [...demands, ...supplies].sort((a, b) => a.startIndex - b.startIndex);
+
+  return { zones, demand: demands, supply: supplies };
 }
