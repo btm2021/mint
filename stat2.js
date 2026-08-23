@@ -131,6 +131,7 @@
     liveTimeframe: document.getElementById('liveTimeframe'),
     liveLimit: document.getElementById('liveLimit'),
     btnFetchLive: document.getElementById('btnFetchLive'),
+    btnToggleMeasure: document.getElementById('btnToggleMeasure'),
     toggleLiveStream: document.getElementById('toggleLiveStream'),
     csvFileInput: document.getElementById('csvFileInput'),
     statusBadge: document.getElementById('statusBadge'),
@@ -214,6 +215,16 @@
   let liveWs = null;
   let lastWsThrottle = 0;
   let isDropdownOpen = false;
+
+  // --- Measurement Tool State (Shift + Click Measure) ---
+  const measure = {
+    modeActive: false,    // Active measurement mode
+    isMeasuring: false,   // Actively measuring / dragging
+    isPinned: false,      // Measurement is locked / displayed on chart
+    start: null,          // { time, price, x, y }
+    current: null,        // { time, price, x, y }
+    lastCrosshair: null   // { time, price, x, y }
+  };
 
   // --- Initialize App ---
   function init() {
@@ -582,11 +593,90 @@
       el.btnExpandSidebar.addEventListener('click', () => toggleSidebar(false));
     }
 
-    // Keyboard shortcut for sidebar toggle (Ctrl+B or [)
+    // Keyboard shortcut for sidebar toggle (Ctrl+B or [) & Measurement (Shift / Escape)
     document.addEventListener('keydown', (e) => {
       if ((e.ctrlKey && e.key.toLowerCase() === 'b') || (e.key === '[' && document.activeElement.tagName !== 'INPUT')) {
         e.preventDefault();
         toggleSidebar();
+      } else if (e.key === 'Shift') {
+        measure.modeActive = true;
+        el.chartContainer.classList.add('measuring');
+        if (el.btnToggleMeasure) el.btnToggleMeasure.classList.add('active');
+      } else if (e.key === 'Escape') {
+        measure.modeActive = false;
+        measure.isMeasuring = false;
+        measure.isPinned = false;
+        measure.start = null;
+        measure.current = null;
+        el.chartContainer.classList.remove('measuring');
+        if (el.btnToggleMeasure) el.btnToggleMeasure.classList.remove('active');
+        scheduleOverlayRender();
+      }
+    });
+
+    document.addEventListener('keyup', (e) => {
+      if (e.key === 'Shift') {
+        if (!measure.isMeasuring) {
+          measure.modeActive = false;
+          el.chartContainer.classList.remove('measuring');
+          if (el.btnToggleMeasure) el.btnToggleMeasure.classList.remove('active');
+        }
+      }
+    });
+
+    // Measurement Tool Toggle Button
+    if (el.btnToggleMeasure) {
+      el.btnToggleMeasure.addEventListener('click', (e) => {
+        e.stopPropagation();
+        measure.modeActive = !measure.modeActive;
+        if (measure.modeActive) {
+          el.chartContainer.classList.add('measuring');
+          el.btnToggleMeasure.classList.add('active');
+        } else {
+          measure.isMeasuring = false;
+          measure.isPinned = false;
+          measure.start = null;
+          measure.current = null;
+          el.chartContainer.classList.remove('measuring');
+          el.btnToggleMeasure.classList.remove('active');
+          scheduleOverlayRender();
+        }
+      });
+    }
+
+    // Chart Click Handler for Measurement (Shift + Click or Active Measure Mode)
+    el.chartContainer.addEventListener('click', (e) => {
+      if (e.shiftKey || measure.modeActive) {
+        if (!measure.isMeasuring) {
+          // Start measurement at current cursor point
+          if (measure.lastCrosshair && measure.lastCrosshair.price !== null) {
+            measure.start = { ...measure.lastCrosshair };
+            measure.current = { ...measure.lastCrosshair };
+            measure.isMeasuring = true;
+            measure.isPinned = false;
+            scheduleOverlayRender();
+          }
+        } else {
+          // Second click: Pin and finish measurement
+          if (measure.lastCrosshair && measure.lastCrosshair.price !== null) {
+            measure.current = { ...measure.lastCrosshair };
+          }
+          measure.isMeasuring = false;
+          measure.isPinned = true;
+          measure.modeActive = false;
+          el.chartContainer.classList.remove('measuring');
+          if (el.btnToggleMeasure) el.btnToggleMeasure.classList.remove('active');
+          scheduleOverlayRender();
+        }
+      } else {
+        // Normal click without shift: Clear existing pinned measurement
+        if (measure.isPinned || measure.isMeasuring) {
+          measure.isMeasuring = false;
+          measure.isPinned = false;
+          measure.start = null;
+          measure.current = null;
+          scheduleOverlayRender();
+        }
       }
     });
 
@@ -1747,6 +1837,137 @@
     if (state.fvg.enable) {
       renderFVGOverlay(getX, getY, fromTime, toTime, rightViewportX);
     }
+
+    // 5. Draw Measurement Tool (Shift + Click Measure)
+    if (measure.start && measure.current && (measure.isMeasuring || measure.isPinned)) {
+      renderMeasurementOverlay(getX, getY, fromTime, toTime);
+    }
+  }
+
+  // --- Draw Measurement Tool Box & Metrics ---
+  function renderMeasurementOverlay(getX, getY, fromTime, toTime) {
+    const t1 = measure.start.time;
+    const t2 = measure.current.time;
+    const p1 = measure.start.price;
+    const p2 = measure.current.price;
+
+    const x1 = getX(t1);
+    const x2 = getX(t2);
+    const y1 = getY(p1);
+    const y2 = getY(p2);
+
+    if (x1 === null || x2 === null || y1 === null || y2 === null) return;
+
+    const isBull = p2 >= p1;
+    const color = isBull ? '#38bdf8' : '#f43f5e';
+    const fillColor = isBull ? 'rgba(56, 189, 248, 0.18)' : 'rgba(244, 63, 94, 0.18)';
+    const borderColor = isBull ? 'rgba(56, 189, 248, 0.9)' : 'rgba(244, 63, 94, 0.9)';
+
+    const minX = Math.min(x1, x2);
+    const maxX = Math.max(x1, x2);
+    const minY = Math.min(y1, y2);
+    const maxY = Math.max(y1, y2);
+    const boxW = Math.max(maxX - minX, 2);
+    const boxH = Math.max(maxY - minY, 2);
+
+    ctx.save();
+
+    // 1. Measure Shaded Box
+    ctx.fillStyle = fillColor;
+    ctx.fillRect(minX, minY, boxW, boxH);
+
+    ctx.strokeStyle = borderColor;
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([4, 3]);
+    ctx.strokeRect(minX, minY, boxW, boxH);
+
+    // 2. Diagonal Vector Line
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.strokeStyle = borderColor;
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([3, 2]);
+    ctx.stroke();
+
+    // 3. Anchor Points
+    ctx.setLineDash([]);
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(x1, y1, 4, 0, Math.PI * 2);
+    ctx.arc(x2, y2, 4, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 4. Calculate Detailed Metrics
+    const deltaPrice = p2 - p1;
+    const pct = p1 > 0 ? (deltaPrice / p1 * 100) : 0;
+    const sign = isBull ? '+' : '';
+
+    let barCount = 1;
+    let volSum = 0;
+    if (state.chartData && state.chartData.length > 0) {
+      const idx1 = state.chartData.findIndex(c => c.time === t1);
+      const idx2 = state.chartData.findIndex(c => c.time === t2);
+      if (idx1 !== -1 && idx2 !== -1) {
+        const startIdx = Math.min(idx1, idx2);
+        const endIdx = Math.max(idx1, idx2);
+        barCount = endIdx - startIdx + 1;
+        for (let i = startIdx; i <= endIdx; i++) {
+          volSum += (state.chartData[i].volume || 0);
+        }
+      }
+    }
+
+    const durationSec = Math.abs(t2 - t1);
+    const durationStr = formatDuration(durationSec);
+
+    // 5. Draw Floating Metric Card
+    const cardW = 185;
+    const cardH = 64;
+    let cardX = (x1 + x2) / 2 - cardW / 2;
+    let cardY = minY - cardH - 12;
+
+    const maxViewportW = el.chartContainer.clientWidth || 800;
+    if (cardX < 10) cardX = 10;
+    if (cardX + cardW > maxViewportW - 65) cardX = maxViewportW - 65 - cardW;
+    if (cardY < 10) cardY = maxY + 12;
+
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.94)';
+    ctx.strokeStyle = borderColor;
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    if (ctx.roundRect) {
+      ctx.roundRect(cardX, cardY, cardW, cardH, 6);
+    } else {
+      ctx.rect(cardX, cardY, cardW, cardH);
+    }
+    ctx.fill();
+    ctx.stroke();
+
+    // Tooltip Typography
+    ctx.font = 'bold 12px "JetBrains Mono", monospace';
+    ctx.fillStyle = isBull ? '#38bdf8' : '#fb7185';
+    ctx.fillText(`${isBull ? '▲' : '▼'} ${sign}${formatPrice(deltaPrice)} (${sign}${pct.toFixed(2)}%)`, cardX + 10, cardY + 20);
+
+    ctx.font = '10px "JetBrains Mono", monospace';
+    ctx.fillStyle = '#cbd5e1';
+    ctx.fillText(`📅 ${barCount} bars • ${durationStr}`, cardX + 10, cardY + 38);
+
+    ctx.fillStyle = '#94a3b8';
+    ctx.fillText(`📊 Vol: ${formatUSDVolume(volSum)}`, cardX + 10, cardY + 54);
+
+    ctx.restore();
+  }
+
+  function formatDuration(sec) {
+    if (sec <= 0) return '0m';
+    const days = Math.floor(sec / 86400);
+    const hours = Math.floor((sec % 86400) / 3600);
+    const mins = Math.floor((sec % 3600) / 60);
+
+    if (days > 0) return `${days}d ${hours}h`;
+    if (hours > 0) return `${hours}h ${mins}m`;
+    return `${mins}m`;
   }
 
   // --- Draw FVG Zones ---
@@ -1968,6 +2189,22 @@
   function updateCrosshairLegend(param) {
     if (!param || !param.time || !param.seriesData || !param.seriesData.get(candleSeries)) {
       return;
+    }
+
+    // Update real-time measurement tracking
+    if (param.point && param.time) {
+      const price = candleSeries.coordinateToPrice(param.point.y);
+      measure.lastCrosshair = {
+        time: param.time,
+        price: price !== null ? price : (candle ? candle.close : null),
+        x: param.point.x,
+        y: param.point.y
+      };
+
+      if (measure.isMeasuring && measure.start) {
+        measure.current = { ...measure.lastCrosshair };
+        scheduleOverlayRender();
+      }
     }
 
     const candle = param.seriesData.get(candleSeries);
