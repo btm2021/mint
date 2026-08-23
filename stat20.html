@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SMC FVG, VSR & Dual ATR Bot Real-Time Engine (Pure JavaScript)</title>
+  <link rel="stylesheet" href="stat2.css">
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- Standalone Libs -->
+  <script src="libs/lightweight-charts.standalone.production.js"></script>
+  <script src="libs/papaparse.min.js"></script>
+  <script>
+    if (typeof LightweightCharts === 'undefined') {
+      document.write('<script src="https://unpkg.com/lightweight-charts@4.2.1/dist/lightweight-charts.standalone.production.js"><\/script>');
+    }
+    if (typeof Papa === 'undefined') {
+      document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"><\/script>');
+    }
+  </script>
+  <!-- Indicator Engines -->
+  <script src="smc.js"></script>
+  <script src="vsr.js"></script>
+  <script src="atrbot.js"></script>
+</head>
+<body class="dark-theme">
+  <!-- Top Navigation Header: Direct Live Symbol Selector with 24h Ticker -->
+  <header class="app-header">
+    <div class="header-left">
+      <div class="logo">
+        <div class="logo-icon">SMC+</div>
+        <div class="logo-text">
+          <span class="brand">SMC • VSR • Dual ATR</span>
+          <span class="sub">Direct Binance Live Engine (Pure JS)</span>
+        </div>
+      </div>
+
+      <div class="divider"></div>
+
+      <!-- Searchable Symbol Picker (from exchangeInfo + 24h Ticker) -->
+      <div class="selector-group">
+        <div class="symbol-picker-wrapper" id="symbolPickerWrapper">
+          <button class="symbol-picker-btn" id="btnOpenSymbolPicker" title="Click to search from 700+ Binance Futures symbols">
+            <span class="search-icon">🔍</span>
+            <span class="active-symbol-text" id="activeSymbolText">BTCUSDT</span>
+            <span class="dropdown-arrow">▾</span>
+          </button>
+
+          <!-- Search Dropdown Panel -->
+          <div class="symbol-dropdown-panel" id="symbolDropdownPanel">
+            <div class="search-input-header">
+              <input type="text" id="symbolSearchInput" placeholder="Search symbol or coin (e.g. BTC, ETH, PEPE)..." autocomplete="off">
+              <span class="symbols-count-badge" id="symbolsCountBadge">Loading...</span>
+            </div>
+
+            <!-- Quick Filter & Sort Toolbar -->
+            <div class="dropdown-toolbar">
+              <div class="quick-filter-tags">
+                <button class="tag-btn active" data-filter="ALL">ALL</button>
+                <button class="tag-btn" data-filter="HOT">🔥 HOT</button>
+                <button class="tag-btn" data-filter="USDT">USDT</button>
+                <button class="tag-btn" data-filter="MEME">MEME</button>
+                <button class="tag-btn" data-filter="LAYER1">L1/L2</button>
+              </div>
+              <div class="sort-buttons">
+                <span class="sort-lbl">Sort:</span>
+                <button class="sort-btn active" id="btnSortVol" title="Sort by 24h USDT Volume">Vol ▾</button>
+                <button class="sort-btn" id="btnSortChg" title="Sort by 24h % Change">Chg%</button>
+              </div>
+            </div>
+
+            <!-- Filtered Symbol List with 24h Tickers -->
+            <div class="symbol-list-container" id="symbolListContainer">
+              <div class="symbol-list-loading">Fetching 24h tickers from Binance...</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 24h Active Ticker Quick Info Badge in Header -->
+        <div class="active-ticker-strip" id="activeTickerStrip">
+          <div class="ticker-box">
+            <span class="tk-lbl">Price:</span>
+            <span class="tk-val" id="tkPrice">--</span>
+          </div>
+          <div class="ticker-box">
+            <span class="tk-lbl">24h Chg:</span>
+            <span class="tk-val" id="tkChg">--</span>
+          </div>
+          <div class="ticker-box">
+            <span class="tk-lbl">24h Vol:</span>
+            <span class="tk-val" id="tkVol">--</span>
+          </div>
+        </div>
+
+        <!-- Timeframe Selector -->
+        <div class="input-with-label">
+          <label for="liveTimeframe">TF</label>
+          <select id="liveTimeframe" class="tf-select">
+            <option value="1m">1m</option>
+            <option value="3m">3m</option>
+            <option value="5m">5m</option>
+            <option value="15m" selected>15m</option>
+            <option value="30m">30m</option>
+            <option value="1h">1h</option>
+            <option value="2h">2h</option>
+            <option value="4h">4h</option>
+            <option value="1d">1d</option>
+          </select>
+        </div>
+
+        <!-- Candles Limit Selector -->
+        <div class="input-with-label">
+          <label for="liveLimit">Candles</label>
+          <select id="liveLimit" class="limit-select">
+            <option value="500">500</option>
+            <option value="1500">1,500</option>
+            <option value="5000">5,000</option>
+            <option value="10000">10,000</option>
+            <option value="20000" selected>20,000 (20k)</option>
+          </select>
+        </div>
+
+        <!-- Live Refresh / Fetch Button -->
+        <button id="btnFetchLive" class="btn btn-primary" title="Fetch live candles and calculate">
+          <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" fill="none" stroke-width="2">
+            <path d="M23 4v6h-6"></path>
+            <path d="M1 20v-6h6"></path>
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+          </svg>
+          Reload
+        </button>
+
+        <!-- Live WebSocket Stream Toggle -->
+        <label class="live-stream-toggle" title="Enable real-time live price streaming via WebSocket">
+          <input type="checkbox" id="toggleLiveStream" checked>
+          <span class="live-pulse"></span>
+          <span class="live-text">Realtime WS</span>
+        </label>
+      </div>
+    </div>
+
+    <!-- Active Status Bar -->
+    <div class="header-right">
+      <div id="statusBadge" class="status-badge status-loading">
+        <span class="status-dot"></span>
+        <span id="statusText">Connecting Binance...</span>
+      </div>
+
+      <div class="quick-stats">
+        <div class="stat-item">
+          <span class="stat-lbl">Scale:</span>
+          <span class="stat-val" id="statScale">Auto</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-lbl">Candles:</span>
+          <span class="stat-val" id="statCandles">0</span>
+        </div>
+      </div>
+
+      <!-- Optional CSV upload backup -->
+      <label class="btn btn-secondary file-upload-label" title="Upload local CSV file">
+        <svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" fill="none" stroke-width="2">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+          <polyline points="14 2 14 8 20 8"></polyline>
+        </svg>
+        CSV
+        <input type="file" id="csvFileInput" accept=".csv" style="display:none;">
+      </label>
+    </div>
+  </header>
+
+  <!-- Main Workspace -->
+  <main class="workspace" id="workspaceContainer">
+    <!-- Left Sidebar: Indicators & Real-Time Stats -->
+    <aside class="sidebar" id="sidebarPanel">
+      <div class="sidebar-header">
+        <div class="sidebar-title-group">
+          <button id="btnCollapseSidebar" class="btn-icon-collapse" title="Collapse Panel (Hide to Left)">◀</button>
+          <h3>Indicators & Analytics</h3>
+        </div>
+        <div class="header-actions">
+          <span class="badge-count" id="activeIndicatorsCount">4 Active</span>
+          <button id="btnResetSettings" class="btn-micro" title="Reset all options to defaults">Reset</button>
+        </div>
+      </div>
+
+      <div class="sidebar-scrollable">
+        <!-- 1. FVG (Fair Value Gap) Panel -->
+        <div class="panel-card">
+          <div class="panel-title flex-between">
+            <label class="switch-container">
+              <input type="checkbox" id="toggleFVG" checked>
+              <span class="switch-slider"></span>
+              <span class="title-text">Fair Value Gaps (FVG)</span>
+            </label>
+            <span class="badge-tag badge-fvg-tag" id="activeFVGCount">0 FVGs</span>
+          </div>
+          <div class="toggles-grid">
+            <div class="sub-row">
+              <label><input type="checkbox" id="fvgBullish" checked> <span class="dot bull"></span> Bullish (+FVG)</label>
+              <label><input type="checkbox" id="fvgBearish" checked> <span class="dot bear"></span> Bearish (-FVG)</label>
+            </div>
+
+            <div class="sub-row">
+              <label><input type="checkbox" id="fvgUnmitigatedOnly"> <span class="tag-unmit">Active Only</span> Unmitigated</label>
+              <label><input type="checkbox" id="fvgJoinConsecutive"> Merge Consecutive</label>
+            </div>
+
+            <div class="slider-row">
+              <div class="slider-header">
+                <span>Min Gap Size (%):</span>
+                <span id="lblMinGap" class="slider-val">0.00%</span>
+              </div>
+              <input type="range" id="sliderMinGap" min="0" max="1.0" step="0.01" value="0">
+            </div>
+
+            <div class="slider-row">
+              <div class="slider-header">
+                <span>Box Opacity:</span>
+                <span id="lblOpacity" class="slider-val">30%</span>
+              </div>
+              <input type="range" id="sliderOpacity" min="10" max="80" step="5" value="30">
+            </div>
+          </div>
+        </div>
+
+        <!-- 2. VSR (Volume Spike Reversal 10-10) Panel -->
+        <div class="panel-card">
+          <div class="panel-title flex-between">
+            <label class="switch-container">
+              <input type="checkbox" id="toggleVSR" checked>
+              <span class="switch-slider switch-yellow"></span>
+              <span class="title-text">VSR (Volume Spike 10-10)</span>
+            </label>
+            <span class="badge-tag badge-vsr-tag" id="badgeVSRCount">0 Spikes</span>
+          </div>
+          <div class="toggles-grid">
+            <div class="sub-row">
+              <label><input type="checkbox" id="vsrShowZone" checked> <span class="line-sample vsr-line"></span> VSR Zone (Upper/Lower)</label>
+              <label><input type="checkbox" id="vsrShowSpikes" checked> ⚡ Spike Markers</label>
+            </div>
+            <div class="inputs-inline">
+              <div class="mini-input">
+                <span>SD Length:</span>
+                <input type="number" id="vsrLength" value="10" min="2" max="100" class="input-num">
+              </div>
+              <div class="mini-input">
+                <span>Threshold:</span>
+                <input type="number" id="vsrThreshold" value="10.0" min="1.0" max="50.0" step="0.5" class="input-num">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3. ATR Bot 1: VIDYA (14, 55, 4.0) - Slow / Trend -->
+        <div class="panel-card">
+          <div class="panel-title flex-between">
+            <label class="switch-container">
+              <input type="checkbox" id="toggleATR1" checked>
+              <span class="switch-slider switch-purple"></span>
+              <span class="title-text">ATR Bot 1 (VIDYA 14/55/4)</span>
+            </label>
+            <span class="badge-tag badge-purple-tag" id="badgeATR1Trend">BULL</span>
+          </div>
+          <div class="toggles-grid">
+            <div class="sub-row">
+              <label><input type="checkbox" id="atr1ShowLines" checked> <span class="line-sample atr1-line"></span> Trail 1 & 2 Lines</label>
+              <label><input type="checkbox" id="atr1ShowRibbon" checked> Trend Ribbon</label>
+              <label><input type="checkbox" id="atr1ShowSignals" checked> Signals</label>
+            </div>
+            <div class="inputs-inline">
+              <div class="mini-input">
+                <span>ATR Len:</span>
+                <input type="number" id="atr1Length" value="14" min="1" max="100" class="input-num">
+              </div>
+              <div class="mini-input">
+                <span>ATR Mult:</span>
+                <input type="number" id="atr1Mult" value="4.0" min="0.1" max="10.0" step="0.1" class="input-num">
+              </div>
+            </div>
+            <div class="inputs-inline">
+              <div class="mini-input">
+                <span>MA Type:</span>
+                <select id="atr1MAType" class="input-select">
+                  <option value="VIDYA" selected>VIDYA</option>
+                  <option value="EMA">EMA</option>
+                  <option value="SMA">SMA</option>
+                  <option value="VWMA">VWMA</option>
+                  <option value="HMA">HMA</option>
+                  <option value="WMA">WMA</option>
+                  <option value="KAMA">KAMA</option>
+                  <option value="TEMA">TEMA</option>
+                  <option value="ZLEMA">ZLEMA</option>
+                </select>
+              </div>
+              <div class="mini-input">
+                <span>MA Len:</span>
+                <input type="number" id="atr1MALength" value="55" min="1" max="200" class="input-num">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 4. ATR Bot 2: VIDYA (14, 21, 2.0) - Fast / Scalp -->
+        <div class="panel-card">
+          <div class="panel-title flex-between">
+            <label class="switch-container">
+              <input type="checkbox" id="toggleATR2" checked>
+              <span class="switch-slider switch-cyan"></span>
+              <span class="title-text">ATR Bot 2 (VIDYA 14/21/2)</span>
+            </label>
+            <span class="badge-tag badge-atr-tag" id="badgeATR2Trend">BULL</span>
+          </div>
+          <div class="toggles-grid">
+            <div class="sub-row">
+              <label><input type="checkbox" id="atr2ShowLines" checked> <span class="line-sample atr2-line"></span> Trail 1 & 2 Lines</label>
+              <label><input type="checkbox" id="atr2ShowRibbon" checked> Trend Ribbon</label>
+              <label><input type="checkbox" id="atr2ShowSignals" checked> Signals</label>
+            </div>
+            <div class="inputs-inline">
+              <div class="mini-input">
+                <span>ATR Len:</span>
+                <input type="number" id="atr2Length" value="14" min="1" max="100" class="input-num">
+              </div>
+              <div class="mini-input">
+                <span>ATR Mult:</span>
+                <input type="number" id="atr2Mult" value="2.0" min="0.1" max="10.0" step="0.1" class="input-num">
+              </div>
+            </div>
+            <div class="inputs-inline">
+              <div class="mini-input">
+                <span>MA Type:</span>
+                <select id="atr2MAType" class="input-select">
+                  <option value="VIDYA" selected>VIDYA</option>
+                  <option value="EMA">EMA</option>
+                  <option value="SMA">SMA</option>
+                  <option value="VWMA">VWMA</option>
+                  <option value="HMA">HMA</option>
+                  <option value="WMA">WMA</option>
+                  <option value="KAMA">KAMA</option>
+                  <option value="TEMA">TEMA</option>
+                  <option value="ZLEMA">ZLEMA</option>
+                </select>
+              </div>
+              <div class="mini-input">
+                <span>MA Len:</span>
+                <input type="number" id="atr2MALength" value="21" min="1" max="200" class="input-num">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 5. FVG Statistical Summary Metrics -->
+        <div class="panel-card">
+          <div class="panel-title">FVG Statistical Summary</div>
+          <div class="stats-grid">
+            <div class="stat-box">
+              <span class="sb-label">Total FVGs</span>
+              <span class="sb-value" id="statTotalFVG">0</span>
+            </div>
+            <div class="stat-box">
+              <span class="sb-label">Mitigation Rate</span>
+              <span class="sb-value text-accent" id="statMitigationRate">0%</span>
+            </div>
+            <div class="stat-box">
+              <span class="sb-label">Bullish (+FVG)</span>
+              <span class="sb-value text-bull" id="statBullCount">0</span>
+            </div>
+            <div class="stat-box">
+              <span class="sb-label">Bearish (-FVG)</span>
+              <span class="sb-value text-bear" id="statBearCount">0</span>
+            </div>
+            <div class="stat-box">
+              <span class="sb-label">Active (Unmitigated)</span>
+              <span class="sb-value text-warn" id="statUnmitCount">0</span>
+            </div>
+            <div class="stat-box">
+              <span class="sb-label">Avg Bars to Mitigate</span>
+              <span class="sb-value" id="statAvgBars">0 bars</span>
+            </div>
+            <div class="stat-box span-2">
+              <span class="sb-label">Average Gap Size</span>
+              <span class="sb-value" id="statAvgGapSize">0.00%</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 6. Interactive FVG List (Click to jump) -->
+        <div class="panel-card fvg-list-card">
+          <div class="panel-title flex-between">
+            <span>Detected FVGs (Click to Jump)</span>
+            <span class="list-counter" id="listCounter">0 items</span>
+          </div>
+          <div class="table-container">
+            <table class="fvg-table" id="fvgTable">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Type</th>
+                  <th>Top</th>
+                  <th>Bottom</th>
+                  <th>Size</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="fvgTableBody">
+                <tr><td colspan="6" class="text-center">No FVGs found</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Center Chart Container -->
+    <div class="chart-wrapper">
+      <!-- Floating Button to Expand Sidebar when hidden -->
+      <button id="btnExpandSidebar" class="floating-sidebar-tab" title="Open Indicator & Analytics Panel (Ctrl+B / [)">
+        <span class="tab-icon">📊</span>
+        <span class="tab-lbl">Indicators & Stats</span>
+        <span class="tab-arrow">▶</span>
+      </button>
+
+      <!-- Floating OHLCV & Indicators Inspector Legend -->
+      <div class="chart-legend" id="chartLegend">
+        <div class="legend-symbol" id="legendSymbol">BTCUSDT (15m) • SMC + VSR + Dual ATR Bot</div>
+        <div class="legend-ohlc">
+          <span class="lbl">O:</span> <span class="val" id="legOpen">--</span>
+          <span class="lbl">H:</span> <span class="val" id="legHigh">--</span>
+          <span class="lbl">L:</span> <span class="val" id="legLow">--</span>
+          <span class="lbl">C:</span> <span class="val" id="legClose">--</span>
+          <span class="lbl">Vol:</span> <span class="val" id="legVol">--</span>
+          <span class="lbl">Change:</span> <span class="val" id="legChange">--</span>
+        </div>
+        <div class="legend-details-row" id="legendDetails"></div>
+      </div>
+
+      <!-- TradingView Lightweight Chart Container -->
+      <div id="chartContainer" class="chart-container"></div>
+      
+      <!-- Overlay Canvas for High-Performance Rendering -->
+      <canvas id="fvgOverlayCanvas" class="fvg-canvas"></canvas>
+    </div>
+  </main>
+
+  <script src="stat2.js"></script>
+</body>
+</html>

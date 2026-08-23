@@ -1,37 +1,320 @@
-<!doctype html>
-<html lang="vi">
-
+<!DOCTYPE html>
+<html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>MintChart · Stat Original</title>
-
-  <!-- Libraries -->
-  <script src="https://unpkg.com/lightweight-charts@5.1.0/dist/lightweight-charts.standalone.production.js"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Smart Money Concepts (SMC) - Binance Futures Visualizer</title>
+  <link rel="stylesheet" href="style.css">
+  <!-- Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
-
-  <link rel="stylesheet" href="css/style.css">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  
+  <!-- Fallback local or CDN scripts -->
+  <script src="libs/lightweight-charts.standalone.production.js"></script>
+  <script src="libs/papaparse.min.js"></script>
+  <script>
+    if (typeof LightweightCharts === 'undefined') {
+      document.write('<script src="https://unpkg.com/lightweight-charts@4.2.1/dist/lightweight-charts.standalone.production.js"><\/script>');
+    }
+    if (typeof Papa === 'undefined') {
+      document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"><\/script>');
+    }
+  </script>
+  <!-- SMC JavaScript Engine Port -->
+  <script src="smc.js"></script>
 </head>
+<body class="dark-theme">
+  <!-- Top Navigation Header -->
+  <header class="app-header">
+    <div class="header-left">
+      <div class="logo">
+        <div class="logo-icon">SMC</div>
+        <div class="logo-text">
+          <span class="brand">SmartMoneyConcepts</span>
+          <span class="sub">Binance Futures Engine</span>
+        </div>
+      </div>
 
-<body>
-  <div id="app-root"></div>
+      <div class="divider"></div>
 
-  <!-- Scripts -->
-  <script src="js/db.js"></script>
-  <script src="js/config.js"></script>
-  <script src="js/indicators.js"></script>
-  <script src="js/layout.js"></script>
-  <script src="js/api.js"></script>
-  <script src="js/ui.js"></script>
-  <script src="js/tools.js"></script>
-  <script src="js/analyse.js"></script>
-  <script src="js/chart.js"></script>
-  <script src="js/strategy-lib.js"></script>
-  <script src="js/strategy-statoriginal.js"></script>
-  <script src="js/interactions.js"></script>
-  <script src="js/main.js"></script>
+      <!-- Dataset Selector from config.json -->
+      <div class="selector-group">
+        <div class="input-with-label dataset-picker">
+          <label for="datasetSelect">
+            <svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" fill="none" stroke-width="2" style="vertical-align: -2px; margin-right: 2px;">
+              <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+              <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+            </svg>
+            Dataset
+          </label>
+          <div class="custom-select-wrapper">
+            <select id="datasetSelect">
+              <option value="">Loading config.json...</option>
+            </select>
+          </div>
+          <button id="btnRefreshConfig" class="btn-icon" title="Reload config.json dataset list">
+            <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" fill="none" stroke-width="2">
+              <path d="M23 4v6h-6"></path>
+              <path d="M1 20v-6h6"></path>
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+            </svg>
+          </button>
+        </div>
+
+        <div class="input-with-label manual-input">
+          <label for="symbolSelect">Symbol</label>
+          <div class="custom-select-wrapper">
+            <input type="text" id="symbolInput" value="BTCUSDT" placeholder="BTCUSDT" class="symbol-text-input">
+          </div>
+        </div>
+
+        <div class="input-with-label">
+          <label for="timeframeSelect">TF</label>
+          <div class="custom-select-wrapper">
+            <select id="timeframeSelect">
+              <option value="1m">1m</option>
+              <option value="3m">3m</option>
+              <option value="5m">5m</option>
+              <option value="15m" selected>15m</option>
+              <option value="30m">30m</option>
+              <option value="1h">1h</option>
+              <option value="2h">2h</option>
+              <option value="4h">4h</option>
+              <option value="1d">1d</option>
+            </select>
+          </div>
+        </div>
+
+        <button id="btnLoadData" class="btn btn-primary">
+          <svg class="icon" viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
+          </svg>
+          Load Data
+        </button>
+
+        <label class="btn btn-secondary file-upload-label" title="Or pick a custom CSV from data_analize folder">
+          <svg class="icon" viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+          </svg>
+          Upload CSV
+          <input type="file" id="csvFileInput" accept=".csv" style="display:none;">
+        </label>
+      </div>
+    </div>
+
+    <!-- Active Status Bar -->
+    <div class="header-right">
+      <div id="statusBadge" class="status-badge status-loading">
+        <span class="status-dot"></span>
+        <span id="statusText">Initializing...</span>
+      </div>
+
+      <div class="quick-stats" id="quickStats">
+        <div class="stat-item">
+          <span class="stat-lbl">Scale:</span>
+          <span class="stat-val" id="statScale">Auto (2 dec)</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-lbl">Candles:</span>
+          <span class="stat-val" id="statCandles">0</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-lbl">Range:</span>
+          <span class="stat-val" id="statRange">--</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Workspace -->
+  <main class="workspace">
+    <!-- Sidebar: SMC Option Toggles -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <h3>SMC Indicators</h3>
+        <span class="badge-count" id="activeIndicatorsCount">7 Active</span>
+      </div>
+
+      <div class="sidebar-scrollable">
+        <!-- Quick All / None Controls -->
+        <div class="quick-toggle-bar">
+          <button id="btnAllOn" class="btn-micro">Enable All</button>
+          <button id="btnAllOff" class="btn-micro">Disable All</button>
+        </div>
+
+        <!-- 1. Fair Value Gaps (FVG) -->
+        <div class="indicator-card">
+          <div class="indicator-header">
+            <label class="switch-container">
+              <input type="checkbox" id="toggleFVG" checked>
+              <span class="switch-slider"></span>
+              <span class="indicator-title">Fair Value Gaps (FVG)</span>
+            </label>
+            <span class="badge badge-fvg" id="countFVG">0</span>
+          </div>
+          <div class="indicator-body">
+            <div class="sub-toggle-row">
+              <label><input type="checkbox" id="fvgBullish" checked> <span class="dot bull"></span> Bullish FVG</label>
+              <label><input type="checkbox" id="fvgBearish" checked> <span class="dot bear"></span> Bearish FVG</label>
+            </div>
+            <div class="sub-toggle-row">
+              <label><input type="checkbox" id="fvgUnmitigatedOnly"> Unmitigated Only</label>
+              <label><input type="checkbox" id="fvgJoinConsecutive"> Merge Consecutive</label>
+            </div>
+          </div>
+        </div>
+
+        <!-- 2. Order Blocks (OB) -->
+        <div class="indicator-card">
+          <div class="indicator-header">
+            <label class="switch-container">
+              <input type="checkbox" id="toggleOB" checked>
+              <span class="switch-slider"></span>
+              <span class="indicator-title">Order Blocks (OB)</span>
+            </label>
+            <span class="badge badge-ob" id="countOB">0</span>
+          </div>
+          <div class="indicator-body">
+            <div class="sub-toggle-row">
+              <label><input type="checkbox" id="obBullish" checked> <span class="dot ob-bull"></span> Bullish OB</label>
+              <label><input type="checkbox" id="obBearish" checked> <span class="dot ob-bear"></span> Bearish OB</label>
+            </div>
+            <div class="sub-toggle-row">
+              <label><input type="checkbox" id="obUnmitigatedOnly"> Unmitigated Only</label>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3. Market Structure (BOS & CHoCH) -->
+        <div class="indicator-card">
+          <div class="indicator-header">
+            <label class="switch-container">
+              <input type="checkbox" id="toggleStructure" checked>
+              <span class="switch-slider"></span>
+              <span class="indicator-title">BOS & CHoCH</span>
+            </label>
+            <span class="badge badge-structure" id="countStructure">0</span>
+          </div>
+          <div class="indicator-body">
+            <div class="sub-toggle-row">
+              <label><input type="checkbox" id="toggleBOS" checked> <span class="tag tag-bos">BOS</span> Break of Struct</label>
+              <label><input type="checkbox" id="toggleCHOCH" checked> <span class="tag tag-choch">CHoCH</span> Change Char</label>
+            </div>
+          </div>
+        </div>
+
+        <!-- 4. Swing Highs & Lows -->
+        <div class="indicator-card">
+          <div class="indicator-header">
+            <label class="switch-container">
+              <input type="checkbox" id="toggleSHL" checked>
+              <span class="switch-slider"></span>
+              <span class="indicator-title">Swing Highs & Lows</span>
+            </label>
+            <span class="badge badge-shl" id="countSHL">0</span>
+          </div>
+          <div class="indicator-body">
+            <div class="sub-toggle-row">
+              <label><input type="checkbox" id="shlHighs" checked> <span class="marker-preview marker-up">▲</span> Swing High (SH)</label>
+              <label><input type="checkbox" id="shlLows" checked> <span class="marker-preview marker-down">▼</span> Swing Low (SL)</label>
+            </div>
+          </div>
+        </div>
+
+        <!-- 5. Liquidity Pools -->
+        <div class="indicator-card">
+          <div class="indicator-header">
+            <label class="switch-container">
+              <input type="checkbox" id="toggleLiquidity" checked>
+              <span class="switch-slider"></span>
+              <span class="indicator-title">Liquidity Pools</span>
+            </label>
+            <span class="badge badge-liq" id="countLiquidity">0</span>
+          </div>
+          <div class="indicator-body">
+            <div class="sub-toggle-row">
+              <label><input type="checkbox" id="liqBullish" checked> Bullish Liquidity</label>
+              <label><input type="checkbox" id="liqBearish" checked> Bearish Liquidity</label>
+            </div>
+          </div>
+        </div>
+
+        <!-- 6. Previous Day High & Low (PDH / PDL) -->
+        <div class="indicator-card">
+          <div class="indicator-header">
+            <label class="switch-container">
+              <input type="checkbox" id="togglePDHL" checked>
+              <span class="switch-slider"></span>
+              <span class="indicator-title">Previous High / Low (1D)</span>
+            </label>
+            <span class="badge badge-pdhl">PDH/PDL</span>
+          </div>
+          <div class="indicator-body">
+            <div class="sub-toggle-row">
+              <label><input type="checkbox" id="pdhLine" checked> <span class="line-sample pdh-color"></span> PDH Line</label>
+              <label><input type="checkbox" id="pdlLine" checked> <span class="line-sample pdl-color"></span> PDL Line</label>
+            </div>
+          </div>
+        </div>
+
+        <!-- 7. Volume Pane -->
+        <div class="indicator-card">
+          <div class="indicator-header">
+            <label class="switch-container">
+              <input type="checkbox" id="toggleVolume" checked>
+              <span class="switch-slider"></span>
+              <span class="indicator-title">Volume Sub-Pane</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Python CLI Guide Card -->
+        <div class="cli-info-card">
+          <div class="cli-title">
+            <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" fill="none" stroke-width="2">
+              <polyline points="4 17 10 11 4 5"></polyline>
+              <line x1="12" y1="19" x2="20" y2="19"></line>
+            </svg>
+            Fetch new data via Terminal:
+          </div>
+          <div class="cli-code">
+            <code>python main.py BTCUSDT 15m 20000</code>
+          </div>
+          <div class="cli-desc">
+            Downloads to <code>data_raw/</code>, calculates SMC into <code>data_analize/</code> & auto-updates <code>config.json</code>.
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Chart Container Area -->
+    <div class="chart-wrapper">
+      <!-- Floating OHLCV & SMC Legend -->
+      <div class="chart-legend" id="chartLegend">
+        <div class="legend-symbol" id="legendSymbol">BTCUSDT (15m)</div>
+        <div class="legend-ohlc">
+          <span class="lbl">O:</span> <span class="val" id="legOpen">--</span>
+          <span class="lbl">H:</span> <span class="val" id="legHigh">--</span>
+          <span class="lbl">L:</span> <span class="val" id="legLow">--</span>
+          <span class="lbl">C:</span> <span class="val" id="legClose">--</span>
+          <span class="lbl">Vol:</span> <span class="val" id="legVol">--</span>
+          <span class="lbl">Change:</span> <span class="val" id="legChange">--</span>
+        </div>
+        <div class="legend-smc-details" id="legendSMC"></div>
+      </div>
+
+      <!-- TradingView Lightweight Chart Div -->
+      <div id="chartContainer" class="chart-container"></div>
+      
+      <!-- Overlay Canvas for SMC Shapes (FVG Boxes, OB Boxes, BOS/CHoCH lines) -->
+      <canvas id="smcOverlayCanvas" class="smc-canvas"></canvas>
+    </div>
+  </main>
+
+  <script src="app.js"></script>
 </body>
-
 </html>
